@@ -1,0 +1,17 @@
+# ===== OS / 编辑器 =====
+.DS_Store
+Thumbs.db
+*.swp
+
+# ===== 构建与运行时产物（不入库）=====
+dist/
+node_modules/
+releases/
+vendor/
+work/
+
+# ===== OrbStack 容器运行时数据（Electron 用户数据缓存，非源码）=====
+deploy/orbstack/data/
+
+# ===== 日志 =====
+*.log
