@@ -1,13 +1,15 @@
-# bidoda 品牌换皮 · 操作手册
+# 投标智囊团（工程代号 bidoda）品牌换皮 · 操作手册
 
-bidoda 不完整改上游任何业务逻辑。上游 `OpenBidKit_Yibiao` 的源码与产物保持原样，本工程只维护**一份品牌清单 + 一个重放脚本**；上游发新版时重新下载、重跑脚本即可，不需要维护 fork、不需要合并 diff。
+**命名口径**：中文名「投标智囊团」用于应用界面与对外呈现；英文代号 `bidoda` 用于仓库、可执行体与内部标识。出品方与技术支持：CheersAI。
+
+投标智囊团不改动上游任何业务逻辑。上游 `OpenBidKit_Yibiao` 的源码与产物保持原样，本工程只维护**一份品牌清单 + 一个重放脚本**；上游发新版时重新下载、重跑脚本即可，不需要维护 fork、不需要合并 diff。
 
 ## 一、三条硬约束
 
 1. **只替换中文品牌字样，绝不动 ASCII `yibiao` 技术标识符。** 界面里的「易标」是中文，而 `window.yibiao`、`yibiao-asset`、`--yibiao-trial-hardware-acceleration`、`yibiao:plugins-changed` 是内部 API / 协议 / 事件名，改了程序直接坏。`brand.json` 的 `textRules.protect` 显式列出保留项，替换时先占位再还原。
 2. **禁用应用内自动更新。** 上游 `UpdateNotifier.tsx` / `SettingsPage.tsx` 带 `checkUpdate()`、`quitAndInstall()`，`client/package.json` 的 `publish` 指向 FB208 官方 Release。一旦点应用内「检查更新」，它会把 app 换回官方「易标」并把换皮冲掉。升级一律走本手册第四节。
 3. **保留归属。** 上游是 AGPL-3.0-only + NOTICE；NOTICE 明确其归属声明为 AGPL §7(b) 要求保留项。运行时改系统名与 Logo 可以，但 LICENSE、NOTICE、原仓库链接、原作者信息不得抹除，也不得对外声称自研。见 `brand/ACKNOWLEDGEMENTS.md`。
-4. **单一真相源、绝不容忍杂交。** bidoda 永远是「某一确切上游版本 + 品牌换皮」的原子镜像，不存在第三种状态。上游任何变动——含「议标」「竞争性谈判」「单一来源采购」「询价」等非招标采购方式这类敏感域元素——都不得导致半同步、半旧版、部分打补丁的杂交态：① 版本锁死在 `brand.json` 的 `versionLock.pinnedVersion`，运行实例靠 `dist/bidoda.app/Contents/Resources/BIDODA-PIN.json` 自报它对应哪个上游版本；② 用 `--freeze-baseline` 对官方原版建立逐文件 sha256 基线，`verify.mjs` 升级后比对，任何预期外差异即判为杂交并阻断；③ 上游新增敏感域元素（如议标、竞争性谈判等）未登记合规复核，升级默认阻断，绝不静默放行。详见技术方案 V5.0 §十。
+4. **单一真相源、绝不容忍杂交。** bidoda 永远是「某一确切上游版本 + 品牌换皮」的原子镜像，不存在第三种状态。上游任何变动——含「议标」「竞争性谈判」「单一来源采购」「询价」等非招标采购方式这类敏感域元素——都不得导致半同步、半旧版、部分打补丁的杂交态：① 版本锁死在 `brand.json` 的 `versionLock.pinnedVersion`，运行实例靠 `dist/bidoda.app/Contents/Resources/BIDODA-PIN.json` 自报它对应哪个上游版本；② 用 `--freeze-baseline` 对官方原版建立逐文件 sha256 基线，`verify.mjs` 升级后比对，任何预期外差异即判为杂交并阻断；③ 上游新增敏感域元素（如议标、竞争性谈判等）未登记合规复核，升级默认阻断，绝不静默放行。详见技术方案 V5.1 §十。
 
 ## 二、今天就在本机跑起来（macOS arm64）
 
@@ -80,7 +82,7 @@ open dist/bidoda.app
 
 ## 五、合规边界（内部自用）
 
-- 允许：同一法律主体内部使用、运行时系统名与 Logo 改为 bidoda / CheersAI。
+- 允许：同一法律主体内部使用、运行时系统名与 Logo 改为「投标智囊团」/ CheersAI。
 - 不允许：对外销售、向其他组织或个人交付副本、把副本交给外部承包商、向公众提供网络服务。
 - 依据：上游 README 末段与 `NOTICE` 要求保留归属；FSF GPL FAQ 关于组织内部使用修改版的说明；AGPL-3.0 第 13 条关于「修改版让用户通过网络交互须提供对应源码」的规定。**若未来形态变为内网多人 Web 或对外交付，须重新评估第 13 条并取得法务意见。**
 - 本文件为工程合规说明，不替代法律意见。
@@ -92,6 +94,6 @@ open dist/bidoda.app
 - 改动 `.app` 后必须 `codesign --force --deep --sign -`，否则 macOS 因签名破坏拒绝启动（脚本已内置）。
 - `CFBundleIdentifier` 故意不改：改了会换 Electron `userData` 目录，既有配置与工作区会看似「丢失」。
 - 替换图标时**保持上游原文件名**只覆盖内容，避免 `CFBundleIconFile` 引用断链。
-- `vendor/OpenBidKit_Yibiao/` 目前只有一次中断的浅克隆残留（`.git` 11 MB，工作树未检出），取 LICENSE/NOTICE 时若缺失，请从上游仓库单独下载放入。
+- 上游 `vendor/` 基线目录已于 2026-11-12 清理（不再保留中断的浅克隆残留）；需要建立/比对防杂交基线时按需重新拉取官方原版，取 LICENSE/NOTICE 时若缺失，请从上游仓库单独下载放入。
 
-产品需求与技术方案见文档空间 `02-需求分析/bidoda-产品PRD-V3.0-2026-11-10.md`、`03-架构与设计/bidoda-技术方案-V5.0-2026-11-10.md`。
+出品方与技术支持：**CheersAI**。产品需求与技术方案见文档空间 `02-需求分析/bidoda-产品PRD-V3.1-2026-11-12.md`、`03-架构与设计/bidoda-技术方案-V5.1-2026-11-12.md`。

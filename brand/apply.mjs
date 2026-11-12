@@ -57,10 +57,10 @@ if (OPT.help) {
 // 自证：先用已知正例与反例跑一遍再信输出。重点验证「ASCII 技术标识符没被误改」。
 if (OPT.selftest) {
   const cases = [
-    { in: '易标投标工具箱', want: 'bidoda', desc: '产品全称' },
-    { in: '<title>易标投标工具箱</title>', want: '<title>bidoda</title>', desc: '页面标题' },
-    { in: "title: '易标投标工具箱'", want: "title: 'bidoda'", desc: '主窗口标题' },
-    { in: '<span>易标</span>', want: '<span>bidoda</span>', desc: '侧栏品牌文字' },
+    { in: '易标投标工具箱', want: '投标智囊团', desc: '产品全称 → 中文对外名' },
+    { in: '<title>易标投标工具箱</title>', want: '<title>投标智囊团</title>', desc: '页面标题' },
+    { in: "title: '易标投标工具箱'", want: "title: '投标智囊团'", desc: '主窗口标题' },
+    { in: '<span>易标</span>', want: '<span>投标智囊团</span>', desc: '侧栏品牌文字' },
     { in: 'window.yibiao?.config.load()', want: 'window.yibiao?.config.load()', desc: '内部 API 不得改动' },
     { in: "protocol.handle('yibiao-asset', cb)", want: "protocol.handle('yibiao-asset', cb)", desc: '自定义协议名不得改动' },
     { in: 'yibiao:plugins-changed', want: 'yibiao:plugins-changed', desc: '事件名不得改动' },
@@ -262,7 +262,7 @@ async function applyRelease() {
     if (!fs.existsSync(plist)) fail('找不到 Info.plist：' + plist);
     pythonPlist(plist);
     report.plistSet = BRAND.infoPlist.set;
-    log('Info.plist 已设置 CFBundleName/CFBundleDisplayName = ' + BRAND.displayName + '；CFBundleIdentifier 保持不变');
+    log('Info.plist 已设置 CFBundleName = ' + BRAND.infoPlist.set.CFBundleName + '、CFBundleDisplayName = ' + BRAND.infoPlist.set.CFBundleDisplayName + '；CFBundleIdentifier 保持不变');
   }
 
   const iconIcns = path.join(ROOT, BRAND.brandAssets.iconIcns);

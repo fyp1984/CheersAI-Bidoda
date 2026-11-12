@@ -95,8 +95,8 @@ async function main() {
   const plistPath = path.join(appDir, 'Contents', 'Info.plist');
   if (fs.existsSync(plistPath)) {
     const p = readPlist(plistPath);
-    check('Info.plist CFBundleName = bidoda', p.CFBundleName === BRAND.assertions.infoPlistCFBundleName, String(p.CFBundleName));
-    check('Info.plist CFBundleDisplayName = bidoda', p.CFBundleDisplayName === BRAND.displayName, String(p.CFBundleDisplayName));
+    check('Info.plist CFBundleName = ' + BRAND.assertions.infoPlistCFBundleName, p.CFBundleName === BRAND.assertions.infoPlistCFBundleName, String(p.CFBundleName));
+    check('Info.plist CFBundleDisplayName = ' + BRAND.assertions.infoPlistCFBundleDisplayName, p.CFBundleDisplayName === BRAND.assertions.infoPlistCFBundleDisplayName, String(p.CFBundleDisplayName));
     check('CFBundleIdentifier 未被改动', !!p.CFBundleIdentifier && /yibiao|openbidkit/i.test(p.CFBundleIdentifier), String(p.CFBundleIdentifier));
     check('CFBundleIconFile 引用仍有效', !p.CFBundleIconFile || fs.existsSync(path.join(appDir, 'Contents', 'Resources', p.CFBundleIconFile)), String(p.CFBundleIconFile));
   } else check('Info.plist 存在', false);
@@ -177,8 +177,10 @@ async function main() {
     for (const s of BRAND.assertions.mustContain) check('技术标识符「' + s + '」未被误改', asarAllText.includes(s));
 
     const htmlEntries = files.filter(f => f.rel.endsWith('index.html'));
-    const titleOK = htmlEntries.some(({ rel, node }) => /<title>\s*bidoda\s*<\/title>/.test(readNode(rel, node).toString('utf8')));
-    check('页面 <title> 为 bidoda', titleOK, htmlEntries.map(f => f.rel).join(', '));
+    const wantTitle = BRAND.assertions.htmlTitle;
+    const titleRe = new RegExp('<title>\\s*' + wantTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*</title>');
+    const titleOK = htmlEntries.some(({ rel, node }) => titleRe.test(readNode(rel, node).toString('utf8')));
+    check('页面 <title> 为 ' + wantTitle, titleOK, htmlEntries.map(f => f.rel).join(', '));
   } else console.log('  SKIP  asar 内部检查（本次为 Level 1 换皮）');
 
   // ---- 域同步闸门（议标等关键域元素，未登记即阻断）----
