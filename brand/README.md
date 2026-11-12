@@ -59,6 +59,10 @@ open dist/bidoda.app
 | `--target source --source-dir <client/>` | 可选路线：生成源码工作副本，供 `npm ci && npm run dev` 自行构建 |
 | `node brand/verify.mjs` | 验收，失败返回非 0 |
 | `node brand/apply.mjs --freeze-baseline --zip <官方原版 zip>` | 对**官方原版**（非换皮）建立上游版本基线 `vendor/baselines/<版本>/app.asar.sha256.json`，供防杂交比对 |
+| `node brand/apply.mjs --freeze-baseline --asar <app.asar> --baseline-id <版本>-win` | Windows 源码构建路线：对**本工程打包产物**建立产物基线（自有面阻断、`node_modules` 信息性） |
+| `node brand/apply.mjs --debrand D3,D4 --target source --source-dir <client/>` | 按 `brand.json → debranding.rules` 重放去标识化规则（第一轨） |
+| `node brand/verify.mjs --debrand-check <源码工作副本>` | 逐条核对 51 条清单锚点是否命中、运营域名 / 品牌字样是否零残留 |
+| `node brand/verify.mjs --baseline-check <app.asar> [--baseline-id <id>]` | 产物基线比对：自有面逐文件 sha256 一致才 PASS，漂移即阻断（exit 1） |
 | `node brand/verify.mjs --selftest` | 自证域同步 / 防杂交纯函数逻辑 |
 
 产物与证据：
@@ -71,7 +75,7 @@ open dist/bidoda.app
 上游迭代很快，本次核查时最新版 `v2.31.7` 就发布于 2026-11-10；`sql/workspace_schema.sql` 已到 `PRAGMA user_version = 44`。所以「丝滑」不是「跟着它自动更新」，而是**把升级变成一次可控的重放**：
 
 1. 下载新版官方 zip，放进 `releases/`；**不要在应用内点检查更新**。
-2. 同一份官方原版首次须建立基线：`node brand/apply.mjs --freeze-baseline --zip <官方原版 zip>`（只做一次，按版本累积在 `vendor/baselines/`）。
+2. 首次须建立基线（只做一次，按 `baselineId` 累积在 `vendor/baselines/` 并随仓库入库）：macOS 官方产物路线 `node brand/apply.mjs --freeze-baseline --zip <官方原版 zip>`；Windows 源码构建路线 `node brand/apply.mjs --freeze-baseline --asar <产出>/win-unpacked/resources/app.asar --baseline-id <版本>-win`。
 3. `node brand/apply.mjs --zip <新 zip> --dry-run`，确认变更集没有异常扩大（新增文件里出现大量非白名单变更＝上游结构变了，要复核 `brand.json`）。
 4. 正式重放 → `node brand/verify.mjs` **全绿**才切换版本指针。此时 `verify.mjs` 会自动比对当前产物与基线，任何预期外差异＝杂交，默认阻断。
 5. 若上游引入「议标」「竞争性谈判」「单一来源采购」「询价」等敏感域元素：先评估并在 `brand.json` 的 `domainSyncPolicy.reviewedAndAdopted` 登记（版本 / 法律地位 / 适用边界 / 救济渠道 / 我方守门补充），否则 `verify.mjs` 的域同步闸门会 FAIL、禁止升级放行。
@@ -94,6 +98,7 @@ open dist/bidoda.app
 - 改动 `.app` 后必须 `codesign --force --deep --sign -`，否则 macOS 因签名破坏拒绝启动（脚本已内置）。
 - `CFBundleIdentifier` 故意不改：改了会换 Electron `userData` 目录，既有配置与工作区会看似「丢失」。
 - 替换图标时**保持上游原文件名**只覆盖内容，避免 `CFBundleIconFile` 引用断链。
-- 上游 `vendor/` 基线目录已于 2026-11-12 清理（不再保留中断的浅克隆残留）；需要建立/比对防杂交基线时按需重新拉取官方原版，取 LICENSE/NOTICE 时若缺失，请从上游仓库单独下载放入。
+- 上游 `vendor/` 基线目录已于 2026-11-12 清理（不再保留中断的浅克隆残留）；需要建立/比对防杂交基线时按需重新拉取官方原版，取 LICENSE/NOTICE 时若缺失，请从上游仓库单独下载放入。**例外**：`vendor/baselines/` 下的产物 sha256 基线是防覆盖 / 防回退的持久锚点，已通过 `.gitignore` 白名单（`vendor/*` + `!vendor/baselines/`）随仓库入库，**不得清理**。
+- 升级时除按本手册重放外，还须逐条核对 `brand/DEBRANDING-CHECKLIST.md`（两轨改动全量清单），并在 Windows 路线跑 `node brand/verify.mjs --baseline-check <app.asar> --baseline-id <版本>-win`。
 
 出品方与技术支持：**CheersAI**。产品需求与技术方案见文档空间 `02-需求分析/bidoda-产品PRD-V3.1-2026-11-12.md`、`03-架构与设计/bidoda-技术方案-V5.1-2026-11-12.md`。

@@ -70,8 +70,11 @@
 | 路径 | 内容 |
 |---|---|
 | `brand/brand.json` | 品牌替换的唯一事实源：替换项、保护串、白名单、版本锁、域同步策略 |
-| `brand/apply.mjs` | 重放脚本：解压官方包 → 复制为 `bidoda.app` → 换皮 → ad-hoc 重签名 → 生成报告；支持 `--dry-run` / `--level 1` / `--freeze-baseline` / `--selftest` |
-| `brand/verify.mjs` | 验收脚本：断言落到产物**内部实际内容**（逐文件 sha256、中文品牌字样已清除、ASCII 标识符仍存在、图标哈希一致、版本自报一致、域同步闸门） |
+| `brand/apply.mjs` | 重放脚本：解压官方包 → 复制为 `bidoda.app` → 换皮 → ad-hoc 重签名 → 生成报告；支持 `--dry-run` / `--level 1` / `--freeze-baseline [--asar <app.asar>] [--baseline-id <id>]` / `--selftest` |
+| `brand/verify.mjs` | 验收脚本：断言落到产物**内部实际内容**（逐文件 sha256、中文品牌字样已清除、ASCII 标识符仍存在、图标哈希一致、版本自报一致、域同步闸门）；支持 `--debrand-check <源码工作副本>`（清单锚点全量核对）与 `--baseline-check <app.asar>`（产物基线比对） |
+| `brand/asar-manifest.mjs` | app.asar 逐文件 sha256 清单工具（内存解析、零落盘），供 `--freeze-baseline` 与 `--baseline-check` 共用 |
+| `brand/DEBRANDING-CHECKLIST.md` | **改动全量清单**：上游升级后按此逐条核对，确保改动不被覆盖、不因版本回退而失效 |
+| `brand/debrand-delta-<版本>.patch` | 第二轨改动补丁：承接无法用单文件锚点表达的跨文件改动（openxmlhelper 命名空间、docx 协议标签改名等） |
 | `brand/make-icons.sh` | 由 CheersAI 源图生成 `.icns` / `.ico` / 各尺寸 PNG，**保持上游原文件名**以免图标引用断链 |
 | `brand/assets/` | CheersAI Logo 源图与生成后的全套图标 |
 | `brand/ACKNOWLEDGEMENTS.md` | AGPL-3.0 归属与许可声明，随产物一并保留 |
@@ -79,8 +82,9 @@
 | `deploy/mac-rename-brand.py` | macOS 侧改名：主可执行体与四个 Helper 包整体换牌，与 `CFBundleExecutable` 保持一致 |
 | `deploy/orbstack/` | 容器化联调：Ubuntu + Xvfb + noVNC，浏览器访问完整 GUI，用于在容器内跑通全流程 |
 | `deploy/windows/` | Windows 安装包构建与联调指引（与 macOS 同源技术方案） |
+| `vendor/baselines/<baselineId>/app.asar.sha256.json` | **随仓库入库**的产物基线（`.gitignore` 白名单），逐文件 sha256，是防杂交 / 防回退的持久锚点 |
 
-`releases/`（上游官方安装包）、`vendor/`（上游只读基线）、`work/`（中间产物）、`dist/`（换皮产物）为本地工作目录，不入库。
+`releases/`（上游官方安装包）、`vendor/*`（上游只读基线，`vendor/baselines/` 除外）、`work/`（中间产物）、`dist/`（换皮产物）为本地工作目录，不入库；**只有 `vendor/baselines/` 例外——基线必须随仓库持久化，否则升级时无从比对**。
 
 ---
 
@@ -125,11 +129,14 @@ open dist/bidoda.app
 上游迭代频繁，数据库结构持续演进，所以「丝滑升级」不是跟着自动更新，而是把升级变成一次**可重复的重放 + 闸门**：
 
 1. 下载新版官方产物放入 `releases/`；**不在应用内点检查更新**。
-2. 同一份官方原版首次建立基线：`node brand/apply.mjs --freeze-baseline --zip <官方原版 zip>`，逐文件 sha256 写入 `vendor/baselines/<版本>/`。
+2. 首次建立基线（只做一次，按 `baselineId` 累积在 `vendor/baselines/`，并随仓库入库）：
+   - **macOS 官方产物路线**：`node brand/apply.mjs --freeze-baseline --zip <官方原版 zip>` → 对**官方原版** `app.asar` 建立上游基线。
+   - **Windows 源码构建路线**：`node brand/apply.mjs --freeze-baseline --asar <产出>/win-unpacked/resources/app.asar --baseline-id <版本>-win` → 对**本工程打包产物**建立产物基线。
 3. `--dry-run` 预览变更集；变更集异常扩大即说明上游结构变了，须复核 `brand.json`。
-4. 正式重放 → `node brand/verify.mjs` 全绿才切换版本指针。
-5. 失败则保留上一版产物（`bidoda.app.prev-<时间戳>` 移动保留、不删除）回滚，新版列入待适配。
-6. 每次重放生成《换皮报告》，记录上游版本号、逐文件哈希、变更集与警告。
+4. 按 [`brand/DEBRANDING-CHECKLIST.md`](./brand/DEBRANDING-CHECKLIST.md) **逐条全量核对**两轨改动：第一轨 `brand.json → debranding.rules` 重放，第二轨 `brand/debrand-delta-<版本>.patch` 应用；任何一条不通过即视为改动被覆盖 / 回退，必须修复后才能出包。
+5. 正式重放 → `node brand/verify.mjs` 全绿才切换版本指针；Windows 路线另行跑 `node brand/verify.mjs --baseline-check <app.asar> --baseline-id <版本>-win`。
+6. 失败则保留上一版产物（`bidoda.app.prev-<时间戳>` 移动保留、不删除）回滚，新版列入待适配。
+7. 每次重放生成《换皮报告》，记录上游版本号、逐文件哈希、变更集与警告。
 
 ### 单一真相源与防杂交（最高优先级）
 
@@ -138,7 +145,7 @@ open dist/bidoda.app
 - **单一真相源**：版本锁死在 `brand.json` 的 `versionLock.pinnedVersion`；运行实例通过 `Contents/Resources/BIDODA-PIN.json` 自报它对应哪个上游版本。
 - **零补丁**：任何业务修正只能源于「重放换皮到新版上游」，绝不在 `vendor/` 原版或 `dist/` 产物里手改逻辑。
 - **二进制决策**：上游发新版后只有「全量采纳」或「整体阻断」两条路，禁止部分采纳与新旧混装。
-- **防杂交技术闸门**：`verify.mjs` 将当前产物与官方原版基线逐文件比对，任何落在换皮白名单之外的差异一律判为漂移并阻断。
+- **防杂交技术闸门**：`verify.mjs` 将当前产物与基线逐文件比对，任何落在换皮白名单之外的差异一律判为漂移并阻断。基线双路线：macOS 官方产物路线用「上游原版基线」；Windows 源码构建路线用「本工程产物基线」（`--asar`，`baselineId` 形如 `<版本>-win`）——自有面（非 `node_modules`）漂移为**阻断级**，`node_modules` 漂移按 lockfile 钉版单列为信息性 WARN。
 - **域同步闸门**：上游新增「议标 / 竞争性谈判 / 单一来源采购 / 询价」等采购方式类域元素时，未在 `brand.json` 的 `domainSyncPolicy.reviewedAndAdopted` 登记并经合规复核，升级**默认阻断**，绝不静默放行。
 
 ---
@@ -157,6 +164,8 @@ open dist/bidoda.app
 | 图标内容哈希与 CheersAI 源图一致 | Logo 生效 |
 | `codesign --verify --deep --strict` 通过 | macOS 可启动 |
 | 归属声明 / LICENSE / NOTICE 存在 | 归属完整 |
+| 产物 asar 自有面逐文件 sha256 与基线一致（`--baseline-check`） | 无杂交、无回退 |
+| `--debrand-check` 清单锚点逐条命中、运营域名与品牌字样零残留 | 去标识化改动未被覆盖 |
 
 替换规则自身须先通过正例与反例自证（`node brand/apply.mjs --selftest`）：**校验脚本没被已知正例与反例自证过，等于没有校验。**
 

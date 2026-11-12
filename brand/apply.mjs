@@ -17,6 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { asarManifest } from './asar-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -49,7 +50,11 @@ if (OPT.help) {
   --source-dir <path> source 模式下的 client/ 目录
   --debrand D3,D4     source 模式下重放去标识化补丁集（默认取 brand.json debranding.enabledLevels）
   --dry-run           只打印变更清单，不写 dist/、不签名
-  --freeze-baseline  对【官方原版】产物建立上游版本基线（vendor/baselines/<version>/app.asar.sha256.json），供 verify 防杂交比对
+  --freeze-baseline  建立产物基线（vendor/baselines/<baseline-id>/app.asar.sha256.json），供 verify 防杂交/防回退比对
+                     macOS 产物路线：对官方原版 zip/.app 的 app.asar 建立上游基线
+                     Windows 源码路线：配 --asar 直接对打包产物 app.asar 建立基线
+  --asar <path>       仅用于 --freeze-baseline：直接指定产物 app.asar（Windows 路线，内存解析零落盘）
+  --baseline-id <id>  仅用于 --freeze-baseline：基线目录名，默认取 versionLock.pinnedVersion（Windows 建议 <ver>-win）
 升级流程：下载上游新 zip -> 重跑本脚本 -> node brand/verify.mjs 全绿 -> 切换版本指针
 防杂交：先用 --freeze-baseline 建立原版基线，再 freeze 之后每次升级都比对「上游基线 + 换皮清单」，任何预期外差异即阻断`);
   process.exit(0);
@@ -65,8 +70,9 @@ if (OPT.selftest) {
     { in: 'window.yibiao?.config.load()', want: 'window.yibiao?.config.load()', desc: '内部 API 不得改动' },
     { in: "protocol.handle('yibiao-asset', cb)", want: "protocol.handle('yibiao-asset', cb)", desc: '自定义协议名不得改动' },
     { in: 'yibiao:plugins-changed', want: 'yibiao:plugins-changed', desc: '事件名不得改动' },
-    { in: '易标官方API', want: '易标官方API', desc: '官方在线服务标签保留（非我方品牌）' },
-    { in: '易标用户交流群二维码', want: '易标用户交流群二维码', desc: '官方社群二维码说明保留' },
+    { in: '易标官方API', want: '投标智囊团官方API', desc: '中文品牌字样全量替换（官方 API 功能入口由 debranding 规则整条摘除，rebrand 只做文本）' },
+    { in: '易标用户交流群二维码', want: '投标智囊团用户交流群二维码', desc: '运营社群文案同样全量替换（入口由 debranding 规则摘除）' },
+    { in: 'openbidkit-oss.agnet.top', want: 'openbidkit-oss.agnet.top', desc: 'ASCII 域名不参与中文替换（由 debranding 规则显式剔除）' },
   ];
   let bad = 0;
   for (const c of cases) {
@@ -172,44 +178,66 @@ async function main() {
   return applyRelease();
 }
 
-/** 对【官方原版】产物建立上游版本基线，供 verify 做防杂交（anti-hybrid）逐文件比对 */
+/**
+ * 建立产物基线，供 verify 做防杂交（anti-hybrid）/防回退逐文件比对。
+ *  - macOS 产物路线（默认）：对【官方原版】zip/.app 的 app.asar 建立上游基线；
+ *  - Windows 源码路线（--asar）：直接对打包产物的 app.asar 建立基线（内存解析，零落盘）。
+ */
 async function freezeBaseline() {
   const version = BRAND.versionLock.pinnedVersion;
-  log('建立上游版本基线 | upstream=' + version + (OPT['dry-run'] ? ' [DRY-RUN]' : ''));
+  const baselineId = OPT['baseline-id'] || version;
+  log('建立产物基线 | upstream=' + version + ' | baselineId=' + baselineId + (OPT['dry-run'] ? ' [DRY-RUN]' : ''));
   if (BRAND.domainSyncPolicy?.reviewedAndAdopted) {
     log('当前已登记域元素：' + (BRAND.domainSyncPolicy.reviewedAndAdopted.map(x => x.term).join('、') || '（无）'));
   }
-  let appSrc;
-  if (OPT.app) {
-    appSrc = path.resolve(ROOT, OPT.app);
-    if (!fs.existsSync(appSrc)) fail('--app 路径不存在：' + appSrc);
+
+  let asarPath, manifest, fileCount, kind;
+  if (OPT.asar) {
+    asarPath = path.resolve(ROOT, OPT.asar);
+    if (!fs.existsSync(asarPath)) fail('--asar 路径不存在：' + asarPath);
+    log('读取产物 app.asar：' + path.relative(ROOT, asarPath));
+    ({ manifest, fileCount } = await asarManifest(asarPath));
+    kind = 'win-product-asar';
   } else {
-    const zip = findZip();
-    log('解压官方原版：' + path.basename(zip));
-    const work = path.join(ROOT, 'work', 'baseline-' + TS);
-    fs.mkdirSync(work, { recursive: true });
-    const unpacked = path.join(work, 'unpacked');
-    fs.mkdirSync(unpacked, { recursive: true });
-    try { run('ditto', ['-x', '-k', zip, unpacked]); }
-    catch (e) { fail('ditto 解压失败：' + e.message); }
-    appSrc = locateApp(unpacked);
+    let appSrc;
+    if (OPT.app) {
+      appSrc = path.resolve(ROOT, OPT.app);
+      if (!fs.existsSync(appSrc)) fail('--app 路径不存在：' + appSrc);
+    } else {
+      const zip = findZip();
+      log('解压官方原版：' + path.basename(zip));
+      const work = path.join(ROOT, 'work', 'baseline-' + TS);
+      fs.mkdirSync(work, { recursive: true });
+      const unpacked = path.join(work, 'unpacked');
+      fs.mkdirSync(unpacked, { recursive: true });
+      try { run('ditto', ['-x', '-k', zip, unpacked]); }
+      catch (e) { fail('ditto 解压失败：' + e.message); }
+      appSrc = locateApp(unpacked);
+    }
+    asarPath = path.join(appSrc, 'Contents', 'Resources', 'app.asar');
+    if (!fs.existsSync(asarPath)) fail('官方原版找不到 app.asar：' + asarPath);
+    const asar = await loadAsar();
+    const outDir = path.join(ROOT, 'work', 'baseline-asar-' + TS);
+    fs.mkdirSync(outDir, { recursive: true });
+    await asar.extractAll(asarPath, outDir);
+    const files = walk(outDir);
+    manifest = {};
+    for (const rel of files) manifest[rel] = sha256(fs.readFileSync(path.join(outDir, rel)));
+    fileCount = files.length;
+    kind = 'mac-upstream-asar';
   }
-  const asarPath = path.join(appSrc, 'Contents', 'Resources', 'app.asar');
-  if (!fs.existsSync(asarPath)) fail('官方原版找不到 app.asar：' + asarPath);
-  const asar = await loadAsar();
-  const outDir = path.join(ROOT, 'work', 'baseline-asar-' + TS);
-  fs.mkdirSync(outDir, { recursive: true });
-  await asar.extractAll(asarPath, outDir);
-  const files = walk(outDir);
-  const manifest = {};
-  for (const rel of files) manifest[rel] = sha256(fs.readFileSync(path.join(outDir, rel)));
-  if (OPT['dry-run']) { log('[DRY-RUN] 将写入基线，含 ' + files.length + ' 个 asar 文件哈希'); return; }
-  const dir = path.join(ROOT, 'vendor', 'baselines', version);
+
+  if (OPT['dry-run']) { log('[DRY-RUN] 将写入基线，含 ' + fileCount + ' 个 asar 文件哈希'); return; }
+  const dir = path.join(ROOT, 'vendor', 'baselines', baselineId);
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, 'app.asar.sha256.json');
-  fs.writeFileSync(out, JSON.stringify({ version, generatedAt: new Date().toISOString(), fileCount: files.length, manifest }, null, 2), 'utf8');
-  log('基线已建立：' + out + '（' + files.length + ' 个 asar 文件哈希）');
-  log('后续 verify.mjs 将比对当前产物与该校验和；任何预期外差异即判为杂交并阻断。');
+  fs.writeFileSync(out, JSON.stringify({
+    version, baselineId, kind,
+    sourceAsar: path.relative(ROOT, asarPath).split(path.sep).join('/'),
+    generatedAt: new Date().toISOString(), fileCount, manifest
+  }, null, 2), 'utf8');
+  log('基线已建立：' + out + '（' + fileCount + ' 个 asar 文件哈希）');
+  log('比对：node brand/verify.mjs --baseline-check <app.asar> --baseline-id ' + baselineId);
 }
 
 /** 路线 A（默认）：直接改官方预编译产物，上游源码一行不动 */

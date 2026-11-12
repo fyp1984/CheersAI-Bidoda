@@ -89,7 +89,7 @@
     "pinnedVersion": "v2.32.2"
   },
   "antiHybrid": {
-    "_comment": "防杂交总闸：当前产物相对『上游版本基线 + 换皮清单』的任何不符差异都视为杂交，默认阻断并要求人工决策（全量采纳或整体阻断）。基线由 apply.mjs freeze-baseline 对官方原版建立。",
+    "_comment": "防杂交总闸：当前产物相对『上游版本基线 + 换皮清单』的任何不符差异都视为杂交，默认阻断并要求人工决策（全量采纳或整体阻断）。基线由 apply.mjs --freeze-baseline 建立：macOS 产物路线对官方原版 app.asar 建立上游基线；Windows 源码路线对打包产物 app.asar 建立产物基线（--asar，baselineId 建议 <version>-win），由 verify.mjs --baseline-check 比对。",
     "blockOnDrift": true,
     "requireBaseline": true,
     "baselinePath": "vendor/baselines/${version}/app.asar.sha256.json"

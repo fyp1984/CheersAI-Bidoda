@@ -10,7 +10,10 @@
 > | 单一事实源 | [`brand/brand.json`](./brand.json) |
 > | 重放引擎 | [`brand/apply.mjs`](./apply.mjs) |
 > | 验收脚本 | [`brand/verify.mjs`](./verify.mjs) |
+> | 产物基线工具 | [`brand/asar-manifest.mjs`](./asar-manifest.mjs)（app.asar 逐文件 sha256 内存解析，零落盘） |
 > | 整体改动补丁 | [`brand/debrand-delta-v2.32.2.patch`](./debrand-delta-v2.32.2.patch) |
+> | 产物基线（Windows 路线） | `vendor/baselines/v2.32.2-win/app.asar.sha256.json`（26,976 个 asar 文件哈希） |
+> | 本次交付产物 | `work/win-build-2.32.2/client/release-win4/`：`bidoda-0.1.0-win-x64.exe`（238.33 MB）、`bidoda-0.1.0-win-x64.zip`（321.2 MB） |
 > | 归属声明（AGPL §7(b)，**不得删除**） | [`brand/ACKNOWLEDGEMENTS.md`](./ACKNOWLEDGEMENTS.md)、`LICENSE`、`NOTICE` |
 
 ---
@@ -225,23 +228,36 @@ git -C work\win-build-2.32.2 grep -n "Yibiao.OpenXmlHelper"
 
 # 5) 应用内自动更新残留（应为 0）
 git -C work\win-build-2.32.2 grep -n -E "quitAndInstall|checkForUpdates|UpdateNotifier"
+
+# 6) 建产物基线（Windows 源码路线；打包产出 app.asar 后执行一次）
+node brand/apply.mjs --freeze-baseline --asar "work\win-build-2.32.2\client\release-win4\win-unpacked\resources\app.asar" --baseline-id v2.32.2-win
+
+# 7) 产物基线比对（防覆盖 / 防回退；自有面漂移即阻断）
+node brand/verify.mjs --baseline-check "work\win-build-2.32.2\client\release-win4\win-unpacked\resources\app.asar" --baseline-id v2.32.2-win
 ```
 
-产出物验收（打包后）：对 `dist/bidoda.app` 或 Windows 安装包内 `app.asar` 复跑 `verify.mjs`，并核对 Product Name / File Description / Copyright 为 `bidoda` / 投标智囊团 / CheersAI。
+**产出物验收（打包后）**
+
+1. 跑第 6)+7) 步：产物基线比对通过（自有面 `electron/` + `dist/` + `assets/` + `package.json` 共 237 个文件逐一一致）。
+2. 核对 exe 版本资源：ProductName=`bidoda`、FileDescription=`bidoda` / `投标智囊团独立桌面客户端`、LegalCopyright 含 `CheersAI`。
+3. 对安装包内 `app.asar` 复跑域名/文案红线（`易标`、运营域名、官方账户标记均应为 0 命中）。
+4. 启动冒烟：`bidoda.exe` 启动后进程稳定存活（本次实测 4 个进程存活 18s 无崩溃）。
 
 ---
 
 ## 4. 升级操作流程（防覆盖 · 防回退）
 
 1. **锁定版本**：更新 `brand.json` → `versionLock.pinnedVersion` 与 `upstream.releaseAsset`。
-2. **建基线**：`node brand/apply.mjs --freeze-baseline`（对新版官方原版建逐文件 sha256 基线）。
+2. **建基线**：
+   - macOS 产物路线：`node brand/apply.mjs --freeze-baseline`（对新版官方原版建逐文件 sha256 基线）。
+   - Windows 源码路线：打包产出 `win-unpacked/resources/app.asar` 后 `node brand/apply.mjs --freeze-baseline --asar <app.asar> --baseline-id <新版>-win`。
 3. **重放第一轨**：`node brand/apply.mjs --target source --source-dir <新版 client> --debrand D3,D4`。
 4. **重放第二轨**：`git apply brand/debrand-delta-<版本>.patch`（若上游改动导致补丁冲突，须逐项手工对齐并**更新补丁与 version 号**）。
 5. **逐条核对本清单**（第 2 节 A–L）。
-6. **跑第 3 节全部验收命令** + `verify.mjs`。
+6. **跑第 3 节全部验收命令** + `verify.mjs`（含 Windows 路线的 `--baseline-check`）。
 7. **全绿**才切换版本指针；**任一失败**保留旧版回滚，**绝不出包**。
 
-> 三项防杂交闸门（`brand.json`）：① 单一真相源 `versionLock.pinnedVersion`；② 零补丁残留；③ `--freeze-baseline` 基线比对。上游任何预期外差异即阻断。
+> 防杂交闸门（`brand.json`）：① 单一真相源 `versionLock.pinnedVersion`；② 零补丁残留；③ 基线比对——macOS 产物路线用「上游原版基线」，Windows 源码路线用「产物基线」（`--asar`，自有面漂移即阻断）。上游任何预期外差异即阻断。
 
 ---
 

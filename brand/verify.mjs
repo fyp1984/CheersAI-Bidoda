@@ -17,6 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { asarManifest, isAppSurface } from './asar-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -297,6 +298,37 @@ function debrandCheck(dir) {
   finish();
 }
 
+/**
+ * 产物基线比对（Windows 源码构建路线）：当前产物 app.asar vs vendor/baselines/<id>/app.asar.sha256.json。
+ * 自有面（electron/dist/assets/package.json）漂移 = 阻断级回退/污染；node_modules 漂移 = 信息性（lockfile 钉版）。
+ */
+async function baselineCheck(asarPath, baselineId) {
+  console.log('bidoda 产物基线比对（防杂交/防回退）\n' + '='.repeat(58));
+  if (!fs.existsSync(asarPath)) { check('产物 app.asar 存在', false, path.relative(ROOT, asarPath)); return finish(); }
+  check('产物 app.asar 存在', true, path.relative(ROOT, asarPath));
+  const id = baselineId || BRAND.versionLock?.pinnedVersion;
+  const baselinePath = path.join(ROOT, 'vendor', 'baselines', id, 'app.asar.sha256.json');
+  if (!fs.existsSync(baselinePath)) {
+    check('基线文件存在', false, path.relative(ROOT, baselinePath) +
+      '（先执行 node brand/apply.mjs --freeze-baseline --asar <app.asar> --baseline-id ' + id + '）');
+    return finish();
+  }
+  const base = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+  check('基线文件存在', true, 'baselineId=' + base.baselineId + ' kind=' + base.kind + ' 基线 ' + base.fileCount + ' 个文件');
+  const { manifest, fileCount } = await asarManifest(asarPath);
+  check('产物文件总数与基线一致', fileCount === base.fileCount, fileCount + ' vs ' + base.fileCount);
+  const drift = computeDrift(base.manifest, manifest, new Set());
+  const appDrift = drift.filter(d => isAppSurface(d.rel));
+  const thirdParty = drift.filter(d => !isAppSurface(d.rel));
+  const fmt = list => list.slice(0, 8).map(d => d.rel + '(' + d.kind + ')').join(', ') + (list.length > 8 ? ' …共 ' + list.length + ' 处' : '');
+  const baseAppCount = Object.keys(base.manifest).filter(isAppSurface).length;
+  check('产物自有面（electron/dist/assets/package.json）相对基线无漂移', appDrift.length === 0,
+    appDrift.length ? fmt(appDrift) : '自有面 ' + baseAppCount + ' 个文件与基线逐一一致');
+  if (thirdParty.length) console.log('  WARN  第三方 node_modules 漂移 ' + thirdParty.length + ' 处（lockfile 钉版，信息性）：' + fmt(thirdParty));
+  else console.log('  PASS  第三方 node_modules 与基线一致');
+  finish();
+}
+
 function latestWorkClient() {
   const work = path.join(ROOT, 'work');
   if (!fs.existsSync(work)) return null;
@@ -335,8 +367,15 @@ function selftest() {
 }
 
 const dcIdx = process.argv.indexOf('--debrand-check');
+const bcIdx = process.argv.indexOf('--baseline-check');
+const bidIdx = process.argv.indexOf('--baseline-id');
 if (process.argv.includes('--selftest')) selftest();
-else if (dcIdx >= 0) {
+else if (bcIdx >= 0) {
+  const next = process.argv[bcIdx + 1];
+  if (!next || next.startsWith('--')) { console.error('[FAIL] --baseline-check 需要 app.asar 路径参数'); process.exit(1); }
+  const bid = bidIdx >= 0 ? process.argv[bidIdx + 1] : null;
+  baselineCheck(path.resolve(ROOT, next), bid).catch(e => { console.error('[FAIL] 基线比对异常：' + (e && e.stack ? e.stack : String(e))); process.exitCode = 1; });
+} else if (dcIdx >= 0) {
   const next = process.argv[dcIdx + 1];
   const dir = next && !next.startsWith('--') ? path.resolve(ROOT, next) : path.resolve(ROOT, latestWorkClient() || 'work/client-missing');
   debrandCheck(dir);
