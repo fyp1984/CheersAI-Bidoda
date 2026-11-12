@@ -17,6 +17,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { asarManifest } from './asar-manifest.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
@@ -47,8 +48,13 @@ if (OPT.help) {
   --level 1|2         1=只换应用名/图标/Info.plist；2=再加 asar 内界面文字（默认 2）
   --target release|source   release=改官方产物（默认）；source=改源码工作副本
   --source-dir <path> source 模式下的 client/ 目录
+  --debrand D3,D4     source 模式下重放去标识化补丁集（默认取 brand.json debranding.enabledLevels）
   --dry-run           只打印变更清单，不写 dist/、不签名
-  --freeze-baseline  对【官方原版】产物建立上游版本基线（vendor/baselines/<version>/app.asar.sha256.json），供 verify 防杂交比对
+  --freeze-baseline  建立产物基线（vendor/baselines/<baseline-id>/app.asar.sha256.json），供 verify 防杂交/防回退比对
+                     macOS 产物路线：对官方原版 zip/.app 的 app.asar 建立上游基线
+                     Windows 源码路线：配 --asar 直接对打包产物 app.asar 建立基线
+  --asar <path>       仅用于 --freeze-baseline：直接指定产物 app.asar（Windows 路线，内存解析零落盘）
+  --baseline-id <id>  仅用于 --freeze-baseline：基线目录名，默认取 versionLock.pinnedVersion（Windows 建议 <ver>-win）
 升级流程：下载上游新 zip -> 重跑本脚本 -> node brand/verify.mjs 全绿 -> 切换版本指针
 防杂交：先用 --freeze-baseline 建立原版基线，再 freeze 之后每次升级都比对「上游基线 + 换皮清单」，任何预期外差异即阻断`);
   process.exit(0);
@@ -64,8 +70,9 @@ if (OPT.selftest) {
     { in: 'window.yibiao?.config.load()', want: 'window.yibiao?.config.load()', desc: '内部 API 不得改动' },
     { in: "protocol.handle('yibiao-asset', cb)", want: "protocol.handle('yibiao-asset', cb)", desc: '自定义协议名不得改动' },
     { in: 'yibiao:plugins-changed', want: 'yibiao:plugins-changed', desc: '事件名不得改动' },
-    { in: '易标官方API', want: '易标官方API', desc: '官方在线服务标签保留（非我方品牌）' },
-    { in: '易标用户交流群二维码', want: '易标用户交流群二维码', desc: '官方社群二维码说明保留' },
+    { in: '易标官方API', want: '投标智囊团官方API', desc: '中文品牌字样全量替换（官方 API 功能入口由 debranding 规则整条摘除，rebrand 只做文本）' },
+    { in: '易标用户交流群二维码', want: '投标智囊团用户交流群二维码', desc: '运营社群文案同样全量替换（入口由 debranding 规则摘除）' },
+    { in: 'openbidkit-oss.agnet.top', want: 'openbidkit-oss.agnet.top', desc: 'ASCII 域名不参与中文替换（由 debranding 规则显式剔除）' },
   ];
   let bad = 0;
   for (const c of cases) {
@@ -171,44 +178,66 @@ async function main() {
   return applyRelease();
 }
 
-/** 对【官方原版】产物建立上游版本基线，供 verify 做防杂交（anti-hybrid）逐文件比对 */
+/**
+ * 建立产物基线，供 verify 做防杂交（anti-hybrid）/防回退逐文件比对。
+ *  - macOS 产物路线（默认）：对【官方原版】zip/.app 的 app.asar 建立上游基线；
+ *  - Windows 源码路线（--asar）：直接对打包产物的 app.asar 建立基线（内存解析，零落盘）。
+ */
 async function freezeBaseline() {
   const version = BRAND.versionLock.pinnedVersion;
-  log('建立上游版本基线 | upstream=' + version + (OPT['dry-run'] ? ' [DRY-RUN]' : ''));
+  const baselineId = OPT['baseline-id'] || version;
+  log('建立产物基线 | upstream=' + version + ' | baselineId=' + baselineId + (OPT['dry-run'] ? ' [DRY-RUN]' : ''));
   if (BRAND.domainSyncPolicy?.reviewedAndAdopted) {
     log('当前已登记域元素：' + (BRAND.domainSyncPolicy.reviewedAndAdopted.map(x => x.term).join('、') || '（无）'));
   }
-  let appSrc;
-  if (OPT.app) {
-    appSrc = path.resolve(ROOT, OPT.app);
-    if (!fs.existsSync(appSrc)) fail('--app 路径不存在：' + appSrc);
+
+  let asarPath, manifest, fileCount, kind;
+  if (OPT.asar) {
+    asarPath = path.resolve(ROOT, OPT.asar);
+    if (!fs.existsSync(asarPath)) fail('--asar 路径不存在：' + asarPath);
+    log('读取产物 app.asar：' + path.relative(ROOT, asarPath));
+    ({ manifest, fileCount } = await asarManifest(asarPath));
+    kind = 'win-product-asar';
   } else {
-    const zip = findZip();
-    log('解压官方原版：' + path.basename(zip));
-    const work = path.join(ROOT, 'work', 'baseline-' + TS);
-    fs.mkdirSync(work, { recursive: true });
-    const unpacked = path.join(work, 'unpacked');
-    fs.mkdirSync(unpacked, { recursive: true });
-    try { run('ditto', ['-x', '-k', zip, unpacked]); }
-    catch (e) { fail('ditto 解压失败：' + e.message); }
-    appSrc = locateApp(unpacked);
+    let appSrc;
+    if (OPT.app) {
+      appSrc = path.resolve(ROOT, OPT.app);
+      if (!fs.existsSync(appSrc)) fail('--app 路径不存在：' + appSrc);
+    } else {
+      const zip = findZip();
+      log('解压官方原版：' + path.basename(zip));
+      const work = path.join(ROOT, 'work', 'baseline-' + TS);
+      fs.mkdirSync(work, { recursive: true });
+      const unpacked = path.join(work, 'unpacked');
+      fs.mkdirSync(unpacked, { recursive: true });
+      try { run('ditto', ['-x', '-k', zip, unpacked]); }
+      catch (e) { fail('ditto 解压失败：' + e.message); }
+      appSrc = locateApp(unpacked);
+    }
+    asarPath = path.join(appSrc, 'Contents', 'Resources', 'app.asar');
+    if (!fs.existsSync(asarPath)) fail('官方原版找不到 app.asar：' + asarPath);
+    const asar = await loadAsar();
+    const outDir = path.join(ROOT, 'work', 'baseline-asar-' + TS);
+    fs.mkdirSync(outDir, { recursive: true });
+    await asar.extractAll(asarPath, outDir);
+    const files = walk(outDir);
+    manifest = {};
+    for (const rel of files) manifest[rel] = sha256(fs.readFileSync(path.join(outDir, rel)));
+    fileCount = files.length;
+    kind = 'mac-upstream-asar';
   }
-  const asarPath = path.join(appSrc, 'Contents', 'Resources', 'app.asar');
-  if (!fs.existsSync(asarPath)) fail('官方原版找不到 app.asar：' + asarPath);
-  const asar = await loadAsar();
-  const outDir = path.join(ROOT, 'work', 'baseline-asar-' + TS);
-  fs.mkdirSync(outDir, { recursive: true });
-  await asar.extractAll(asarPath, outDir);
-  const files = walk(outDir);
-  const manifest = {};
-  for (const rel of files) manifest[rel] = sha256(fs.readFileSync(path.join(outDir, rel)));
-  if (OPT['dry-run']) { log('[DRY-RUN] 将写入基线，含 ' + files.length + ' 个 asar 文件哈希'); return; }
-  const dir = path.join(ROOT, 'vendor', 'baselines', version);
+
+  if (OPT['dry-run']) { log('[DRY-RUN] 将写入基线，含 ' + fileCount + ' 个 asar 文件哈希'); return; }
+  const dir = path.join(ROOT, 'vendor', 'baselines', baselineId);
   fs.mkdirSync(dir, { recursive: true });
   const out = path.join(dir, 'app.asar.sha256.json');
-  fs.writeFileSync(out, JSON.stringify({ version, generatedAt: new Date().toISOString(), fileCount: files.length, manifest }, null, 2), 'utf8');
-  log('基线已建立：' + out + '（' + files.length + ' 个 asar 文件哈希）');
-  log('后续 verify.mjs 将比对当前产物与该校验和；任何预期外差异即判为杂交并阻断。');
+  fs.writeFileSync(out, JSON.stringify({
+    version, baselineId, kind,
+    sourceAsar: path.relative(ROOT, asarPath).split(path.sep).join('/'),
+    generatedAt: new Date().toISOString(), fileCount, manifest
+  }, null, 2), 'utf8');
+  log('基线已建立：' + out + '（' + fileCount + ' 个 asar 文件哈希）');
+  log('比对：node brand/verify.mjs --baseline-check <app.asar> --baseline-id ' + baselineId);
 }
 
 /** 路线 A（默认）：直接改官方预编译产物，上游源码一行不动 */
@@ -360,29 +389,119 @@ async function applyRelease() {
 function applySource() {
   const src = path.resolve(ROOT, OPT['source-dir'] || path.join('vendor', 'OpenBidKit_Yibiao', 'client'));
   if (!fs.existsSync(src)) fail('源码目录不存在：' + src + '。请先取得上游源码。');
+  const dryRun = !!OPT['dry-run'];
   const dst = path.join(ROOT, 'work', 'client-' + TS);
-  log('源码工作副本：' + src + '\n输出：' + dst + (OPT['dry-run'] ? ' [DRY-RUN，不写入]' : ''));
-  if (OPT['dry-run']) return;
-  fs.cpSync(src, dst, { recursive: true, filter: p => !p.includes('node_modules') && !p.includes(path.sep + 'release' + path.sep) });
+  log('源码工作副本：' + src + '\n输出：' + dst + (dryRun ? ' [DRY-RUN，不写入]' : ''));
+  // 干跑时不复制整棵树，直接以上游原版为读取源、只做命中率统计，零落盘。
+  if (!dryRun) fs.cpSync(src, dst, { recursive: true, filter: p => !p.includes('node_modules') && !p.includes(path.sep + 'release' + path.sep) });
+  const base = dryRun ? src : dst;
 
-  const pkgPath = path.join(dst, 'package.json');
+  const pkgPath = path.join(base, 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   pkg.build = { ...pkg.build, ...BRAND.sourceBuild.set };
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
-  log('package.json build 字段已覆盖（productName / copyright / artifactName / publish=[]）');
+  if (!dryRun) fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n', 'utf8');
+  log('package.json build 字段' + (dryRun ? '（将）' : '已') + '覆盖：' + Object.keys(BRAND.sourceBuild.set).join(' / '));
   log('publish 置空的理由：应用内自动更新会拉官方版并把 bidoda 换皮覆盖掉。');
 
   const targets = ['index.html', path.join('electron', 'main.cjs'), path.join('src', 'components', 'Sidebar.tsx')];
   for (const rel of targets) {
-    const p = path.join(dst, rel);
+    const p = path.join(base, rel);
     if (!fs.existsSync(p)) { log('[WARN] 跳过（文件不存在）：' + rel); continue; }
     const t = fs.readFileSync(p, 'utf8');
     const n = rebrand(t);
-    if (n !== t) { fs.writeFileSync(p, n, 'utf8'); log('已替换中文品牌字样：' + rel); }
+    if (n !== t) { if (!dryRun) fs.writeFileSync(p, n, 'utf8'); log('已替换中文品牌字样：' + rel); }
   }
-  fs.copyFileSync(path.join(HERE, 'ACKNOWLEDGEMENTS.md'), path.join(dst, 'ACKNOWLEDGEMENTS.md'));
-  log('\n完成。构建：cd ' + dst + ' && npm ci && npm run dev');
-  log('注意：npm run dist:mac 打包还需 .NET 10 SDK。');
+
+  const levels = parseLevels(OPT.debrand);
+  applyDebrand(base, levels, dryRun);
+
+  if (!dryRun) fs.copyFileSync(path.join(HERE, 'ACKNOWLEDGEMENTS.md'), path.join(dst, 'ACKNOWLEDGEMENTS.md'));
+  log('\n' + (dryRun ? '[DRY-RUN] 未写入 work/。' : '完成。') + '构建：cd ' + dst + ' && npm ci && npm run build && npm run dist:win');
+  log('注意：npm run dist:win 打包还需 .NET 10 SDK（dotnet publish openxmlhelper）。');
+}
+
+function parseLevels(v) {
+  const def = BRAND.debranding?.enabledLevels || [];
+  if (v === undefined || v === true) return def;
+  return String(v).split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function countOccurrences(hay, needle) {
+  if (!needle) return 0;
+  return hay.split(needle).length - 1;
+}
+
+/** 单条 op 的执行：返回 { hits, text }。hits=0 即锚点未命中，交由调用方按 blockOnMiss 处置。 */
+function applyOp(op, text, file, dryRun) {
+  if (text === null && op.op !== 'delete-file') return { hits: 0, text };
+  switch (op.op) {
+    case 'replace':
+    case 'set-const': {
+      const hits = countOccurrences(text, op.anchor);
+      return { hits, text: hits ? text.split(op.anchor).join(op.value) : text };
+    }
+    case 'remove-lines': {
+      let hits = 0;
+      const kept = text.split('\n').filter(l => { if (l.includes(op.anchor)) { hits++; return false; } return true; });
+      return { hits, text: kept.join('\n') };
+    }
+    case 'remove-block': {
+      const lines = text.split('\n');
+      const a = op.anchor.trim(), b = (op.endAnchor || '').trim();
+      let start = -1, end = -1;
+      for (let i = 0; i < lines.length; i++) if (lines[i].trim() === a) { start = i; break; }
+      if (start >= 0) for (let i = start + 1; i < lines.length; i++) if (lines[i].trim() === b) { end = i; break; }
+      if (start >= 0 && end >= 0) { lines.splice(start, end - start + 1); return { hits: 1, text: lines.join('\n') }; }
+      return { hits: 0, text };
+    }
+    case 'delete-file': {
+      const exists = fs.existsSync(file);
+      if (exists && !dryRun) fs.rmSync(file, { force: true });
+      return { hits: exists ? 1 : 0, text: null };
+    }
+    default:
+      fail('未知 op：' + op.op + '（规则文件 ' + file + '）');
+  }
+}
+
+/** 清单驱动的 D3/D4 去标识化重放。每条规则「精确锚点 + 定点动作」，锚点未命中即暴露，绝不静默放行。 */
+function applyDebrand(base, levels, dryRun) {
+  const cfg = BRAND.debranding;
+  if (!cfg || !Array.isArray(cfg.rules)) { log('[WARN] brand.json 无 debranding.rules，跳过去标识化重放'); return; }
+  const enabled = new Set(cfg.enabledLevels || []);
+  const want = new Set(levels);
+  const active = cfg.rules.filter(r => enabled.has(r.level) && want.has(r.level));
+  log('\n去标识化重放 | 层级 ' + levels.join(',') + ' | 规则 ' + active.length + ' 条' + (dryRun ? ' [DRY-RUN]' : ''));
+  const misses = [];
+  let applied = 0;
+  for (const rule of active) {
+    const file = path.join(base, rule.file);
+    let text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+    const onlyDelete = rule.ops.every(o => o.op === 'delete-file');
+    if (text === null && !onlyDelete) { misses.push({ rule, reason: '文件不存在：' + rule.file }); log('  MISS  ' + rule.level + ' ' + rule.id + ' -> 文件不存在 ' + rule.file); continue; }
+    let cur = text, ruleOk = true;
+    const hitLog = [];
+    for (const op of rule.ops) {
+      const r = applyOp(op, cur, file, dryRun);
+      hitLog.push(op.op + ' x' + r.hits);
+      if (r.hits === 0) { ruleOk = false; misses.push({ rule, reason: '锚点未命中：' + op.op + ' 「' + String(op.anchor).split('\n')[0].slice(0, 60) + '」' }); }
+      cur = r.text;
+    }
+    if (ruleOk && rule.verify && cur !== null) {
+      for (const s of (rule.verify.mustContain || [])) if (!cur.includes(s)) { ruleOk = false; misses.push({ rule, reason: 'verify.mustContain 未满足：「' + s + '」' }); }
+      for (const s of (rule.verify.mustNotContain || [])) if (cur.includes(s)) { ruleOk = false; misses.push({ rule, reason: 'verify.mustNotContain 被违反：「' + s + '」' }); }
+    }
+    log('  ' + (ruleOk ? 'HIT   ' : 'MISS  ') + rule.level + ' ' + rule.id + ' [' + hitLog.join(', ') + '] ' + rule.file);
+    if (ruleOk) {
+      applied++;
+      if (!dryRun && cur !== null) fs.writeFileSync(file, cur, 'utf8');
+    }
+  }
+  log('去标识化：命中 ' + applied + '/' + active.length + ' 条规则' + (dryRun ? '（DRY-RUN，未落盘）' : ''));
+  if (misses.length) {
+    for (const m of misses) log('  - ' + m.rule.level + ' ' + m.rule.id + '：' + m.reason);
+    if (cfg.blockOnMiss) fail('去标识化规则未命中 ' + misses.length + ' 处，blockOnMiss=true 阻断。请修正 brand.json 锚点或上游源码已变更。');
+  }
 }
 
 main().catch(e => fail('未捕获异常：' + (e && e.stack ? e.stack : String(e))));

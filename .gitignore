@@ -7,7 +7,10 @@ Thumbs.db
 dist/
 node_modules/
 releases/
-vendor/
+# vendor/ 整体为本地只读基线目录；但 vendor/baselines/ 下的产物 sha256 基线
+# 是「防覆盖 / 防回退」的核心锚点，必须随仓库持久化，故用 vendor/* 开白名单。
+vendor/*
+!vendor/baselines/
 work/
 
 # ===== OrbStack 容器运行时数据（Electron 用户数据缓存，非源码）=====
