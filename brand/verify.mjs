@@ -227,6 +227,83 @@ function finish() {
   if (bad.length) process.exitCode = 1;
 }
 
+function walk(dir, base = dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name === '.git') continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walk(full, base));
+    else if (e.isFile()) out.push(path.relative(base, full).split(path.sep).join('/'));
+  }
+  return out;
+}
+
+/**
+ * 去标识化验收（源码工作副本）：消费 brand.json debranding.assert。
+ * 断言落到「将来会进 asar 的源码文本」上：扫描 src/、electron/、index.html，
+ * 任一残留运营域名（allowFiles 例外除外）/文案/组件标记即判 FAIL；技术标识符必须仍在。
+ */
+function debrandCheck(dir) {
+  console.log('bidoda 去标识化验收（源码工作副本）\n' + '='.repeat(58));
+  if (!fs.existsSync(dir)) { check('源码工作副本存在', false, path.relative(ROOT, dir)); return finish(); }
+  check('源码工作副本存在', true, path.relative(ROOT, dir));
+  const cfg = BRAND.debranding || {};
+  const a = cfg.assert || {};
+  const allowFiles = new Set(a.forbiddenDomainAllowFiles || []);
+  const hasDist = fs.existsSync(path.join(dir, 'dist'));
+  const isText = r => TEXT_EXT.has(path.extname(r).toLowerCase());
+  const all = walk(dir).filter(isText);
+  // 随包发布面：electron/ 原样入 asar，dist/ 为渲染层构建产物（未构建时退化为 index.html）。
+  const ship = all.filter(r => /^electron\//.test(r) || (hasDist && /^dist\//.test(r)) || (!hasDist && r === 'index.html') || r === 'package.json');
+  // 域名红线的守卫面更宽：源码里也不许留运营端点（即便某模块未被打包）。
+  const guard = all.filter(r => /^src\//.test(r));
+  const forbidden = [], texts = [], markers = [];
+  const read = rel => { try { return fs.readFileSync(path.join(dir, rel), 'utf8'); } catch { return ''; } };
+  for (const rel of [...new Set([...ship, ...guard])]) {
+    const t = read(rel);
+    const bn = path.basename(rel);
+    for (const d of (a.forbiddenDomains || [])) if (t.includes(d) && !allowFiles.has(bn)) forbidden.push(rel + ' -> ' + d);
+  }
+  let shipText = '';
+  for (const rel of ship) {
+    const t = read(rel);
+    shipText += '\n' + t;
+    for (const s of (a.mustNotContainText || [])) if (t.includes(s)) texts.push(rel + ' -> ' + s);
+    for (const s of (a.mustNotContainMarkers || [])) if (t.includes(s)) markers.push(rel + ' -> ' + s);
+  }
+  if (!hasDist) console.log('  WARN  未发现 dist/，按未构建近似校验（文本类断言仅覆盖 electron/）。请先 npm run build 以获得最终产物级结论。');
+  check('去标识化：无残留运营域名（含 src 守卫面）', forbidden.length === 0, forbidden.slice(0, 8).join(' | ') || ('扫描 ' + ship.length + ' 随包文件 + ' + guard.length + ' 源文件；例外 ' + (a.forbiddenDomainAllowFiles || []).join(',')));
+  check('去标识化：随包文本无残留运营文案', texts.length === 0, texts.slice(0, 8).join(' | ') || '干净');
+  check('去标识化：随包文本无残留运营组件标记', markers.length === 0, markers.slice(0, 8).join(' | ') || '干净');
+  for (const s of (a.mustContainKeep || [])) check('技术标识符保留：' + s, shipText.includes(s));
+
+  const enabled = new Set(cfg.enabledLevels || []);
+  const rules = (cfg.rules || []).filter(r => enabled.has(r.level) && r.verify);
+  let ruleBad = 0;
+  for (const rule of rules) {
+    const p = path.join(dir, rule.file);
+    if ((rule.ops || []).some(o => o.op === 'delete-file')) {
+      if (fs.existsSync(p)) { ruleBad++; check(rule.level + ' ' + rule.id + ' 应已删除', false, rule.file); }
+      continue;
+    }
+    if (!fs.existsSync(p)) { ruleBad++; check(rule.level + ' ' + rule.id + ' 目标文件存在', false, rule.file); continue; }
+    const t = fs.readFileSync(p, 'utf8');
+    const badNot = (rule.verify.mustNotContain || []).filter(s => t.includes(s));
+    const badHas = (rule.verify.mustContain || []).filter(s => !t.includes(s));
+    if (badNot.length) { ruleBad++; check(rule.level + ' ' + rule.id + ' 已清除', false, badNot.join('、')); }
+    if (badHas.length) { ruleBad++; check(rule.level + ' ' + rule.id + ' 保留项', false, '缺失 ' + badHas.join('、')); }
+  }
+  check('全部规则 verify 断言通过', ruleBad === 0, ruleBad ? ruleBad + ' 条失败' : rules.length + ' 条规则全绿');
+  finish();
+}
+
+function latestWorkClient() {
+  const work = path.join(ROOT, 'work');
+  if (!fs.existsSync(work)) return null;
+  const list = fs.readdirSync(work).filter(n => n.startsWith('client-')).sort();
+  return list.length ? path.join('work', list[list.length - 1]) : null;
+}
+
 /** 自证：用已知正例/反例跑一遍纯函数，验证闸门逻辑本身没错 */
 function selftest() {
   console.log('verify.mjs 自证（域同步 / 防杂交 纯函数）\n' + '-'.repeat(50));
@@ -257,5 +334,10 @@ function selftest() {
   process.exit(bad ? 1 : 0);
 }
 
+const dcIdx = process.argv.indexOf('--debrand-check');
 if (process.argv.includes('--selftest')) selftest();
-else main().catch(e => { console.error('[FAIL] 验收脚本异常：' + (e && e.stack ? e.stack : String(e))); process.exitCode = 1; });
+else if (dcIdx >= 0) {
+  const next = process.argv[dcIdx + 1];
+  const dir = next && !next.startsWith('--') ? path.resolve(ROOT, next) : path.resolve(ROOT, latestWorkClient() || 'work/client-missing');
+  debrandCheck(dir);
+} else main().catch(e => { console.error('[FAIL] 验收脚本异常：' + (e && e.stack ? e.stack : String(e))); process.exitCode = 1; });
