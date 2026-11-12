@@ -1,7 +1,7 @@
 {
-  "_comment": "bidoda 品牌换皮的唯一事实源。所有替换项集中于此，上游源码与业务逻辑零改动。",
+  "_comment": "投标智囊团（工程代号 bidoda）品牌换皮的唯一事实源。命名口径：中文名「投标智囊团」用于应用界面与对外呈现；英文代号 bidoda 用于仓库、可执行体与内部标识；出品方与技术支持 CheersAI。所有替换项集中于此，上游源码与业务逻辑零改动。",
   "product": "bidoda",
-  "displayName": "bidoda",
+  "displayName": "投标智囊团",
   "brandOwner": "CheersAI",
   "usage": "internal-only",
   "upstream": {
@@ -17,7 +17,7 @@
     "_comment": "CFBundleIdentifier 故意不改：改动会导致 Electron userData 目录变更、既有配置与工作区看似丢失。",
     "set": {
       "CFBundleName": "bidoda",
-      "CFBundleDisplayName": "bidoda"
+      "CFBundleDisplayName": "投标智囊团"
     },
     "keep": ["CFBundleIdentifier"]
   },
@@ -44,8 +44,8 @@
       "openExternal"
     ],
     "replace": [
-      { "old": "易标投标工具箱", "new": "bidoda" },
-      { "old": "易标", "new": "bidoda" }
+      { "old": "易标投标工具箱", "new": "投标智囊团" },
+      { "old": "易标", "new": "投标智囊团" }
     ]
   },
   "textFileExtensions": [".html", ".js", ".cjs", ".mjs", ".json", ".css", ".ts", ".tsx", ".txt", ".md"],
@@ -71,7 +71,9 @@
     "mustNotContain": ["易标投标工具箱"],
     "mustNotContainStandalone": ["易标"],
     "mustContain": ["window.yibiao", "yibiao-asset", "yibiao-client"],
-    "infoPlistCFBundleName": "bidoda"
+    "infoPlistCFBundleName": "bidoda",
+    "infoPlistCFBundleDisplayName": "投标智囊团",
+    "htmlTitle": "投标智囊团"
   },
   "brandAssets": {
     "iconIcns": "brand/assets/icon.icns",
