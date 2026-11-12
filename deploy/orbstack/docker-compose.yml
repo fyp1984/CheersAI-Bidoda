@@ -1,0 +1,12 @@
+services:
+  bidoda-dev:
+    build: .
+    container_name: bidoda-dev
+    ports:
+      - "6080:6080"   # noVNC：浏览器访问 GUI
+      - "5173:5173"   # Vite dev server（可选，调试用）
+    volumes:
+      - ./data:/root/.config   # 持久化应用配置 / 工作区数据
+    environment:
+      - DISPLAY=:99
+    restart: unless-stopped

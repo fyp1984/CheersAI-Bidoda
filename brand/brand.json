@@ -1,0 +1,105 @@
+{
+  "_comment": "bidoda 品牌换皮的唯一事实源。所有替换项集中于此，上游源码与业务逻辑零改动。",
+  "product": "bidoda",
+  "displayName": "bidoda",
+  "brandOwner": "CheersAI",
+  "usage": "internal-only",
+  "upstream": {
+    "name": "OpenBidKit / 易标投标工具箱",
+    "repo": "https://github.com/FB208/OpenBidKit_Yibiao",
+    "author": "mark / yibiaoai",
+    "license": "AGPL-3.0-only",
+    "notice": "NOTICE 归属声明、原仓库链接与作者信息必须保留",
+    "pinnedVersion": "v2.31.7",
+    "releaseAsset": "Yibiao-${version}-mac-arm64.zip"
+  },
+  "infoPlist": {
+    "_comment": "CFBundleIdentifier 故意不改：改动会导致 Electron userData 目录变更、既有配置与工作区看似丢失。",
+    "set": {
+      "CFBundleName": "bidoda",
+      "CFBundleDisplayName": "bidoda"
+    },
+    "keep": ["CFBundleIdentifier"]
+  },
+  "sourceBuild": {
+    "_comment": "仅当自行从源码构建时，覆盖 client/package.json 的 build 字段；publish 置空以禁用上游自动更新，否则应用内更新会把品牌换回官方版。",
+    "set": {
+      "productName": "bidoda",
+      "copyright": "Copyright (C) 2025-2026 mark / yibiaoai; bidoda packaging by CheersAI, 2026",
+      "artifactName": "bidoda-${version}-${os}-${arch}.${ext}",
+      "publish": []
+    }
+  },
+  "textRules": {
+    "_comment": "核心判据：只替换中文品牌字样，所有 ASCII yibiao 技术标识符、官方 API 域名一律不动。改动 ASCII 标识符会直接破坏功能。",
+    "protect": [
+      "易标官方API",
+      "易标用户交流群二维码",
+      "v3.yibiao.pro",
+      "window.yibiao",
+      "yibiao-asset",
+      "--yibiao-trial-hardware-acceleration",
+      "yibiao:plugins-changed",
+      "__yibiaoCheckRemoteNotice",
+      "openExternal"
+    ],
+    "replace": [
+      { "old": "易标投标工具箱", "new": "bidoda" },
+      { "old": "易标", "new": "bidoda" }
+    ]
+  },
+  "textFileExtensions": [".html", ".js", ".cjs", ".mjs", ".json", ".css", ".ts", ".tsx", ".txt", ".md"],
+  "asarWhiteList": [
+    "**/*.html",
+    "**/*.js",
+    "**/*.cjs",
+    "**/*.mjs",
+    "**/*.json",
+    "**/*.css",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.txt",
+    "**/*.md",
+    "**/index.html",
+    "**/dist/**/*.html",
+    "**/dist/**/*.js",
+    "**/electron/**/*.cjs",
+    "**/package.json"
+  ],
+  "assertions": {
+    "_comment": "验收断言落到产物内部实际内容，不停留在文件存在；mustContain 用于证明技术标识符未被误改。",
+    "mustNotContain": ["易标投标工具箱"],
+    "mustNotContainStandalone": ["易标"],
+    "mustContain": ["window.yibiao", "yibiao-asset", "yibiao-client"],
+    "infoPlistCFBundleName": "bidoda"
+  },
+  "brandAssets": {
+    "iconIcns": "brand/assets/icon.icns",
+    "iconIco": "brand/assets/icon.ico",
+    "logoSource": "brand/assets/cheersai-logo.png",
+    "_comment": "替换图标时保持上游原有文件名不变，只覆盖内容，避免 Info.plist 的 CFBundleIconFile 引用断链。"
+  },
+  "upgradePolicy": {
+    "_comment": "禁止使用应用内「检查更新」。上游新版发布后：下载新 zip/exe → 重跑 apply.mjs → 跑 verify.mjs → 全绿才切换版本指针 → 失败保留旧版可回滚。",
+    "disableInAppUpdater": true,
+    "regressionBeforeSwitch": true
+  },
+  "versionLock": {
+    "_comment": "bidoda 永远是『某一确切上游版本 + 品牌换皮』的原子镜像。pinnedVersion 一旦写入即锁死；运行实例必须能自报它对应哪个上游版本（落地为 dist 内的 BIDODA-PIN.json）。任何与该版本基线不符的差异都视为杂交。",
+    "required": true,
+    "pinnedVersion": "v2.31.7"
+  },
+  "antiHybrid": {
+    "_comment": "防杂交总闸：当前产物相对『上游版本基线 + 换皮清单』的任何不符差异都视为杂交，默认阻断并要求人工决策（全量采纳或整体阻断）。基线由 apply.mjs freeze-baseline 对官方原版建立。",
+    "blockOnDrift": true,
+    "requireBaseline": true,
+    "baselinePath": "vendor/baselines/${version}/app.asar.sha256.json"
+  },
+  "domainSyncPolicy": {
+    "_comment": "上游每新增域元素（功能/模块/文案，含议标、竞争性谈判、单一来源采购、询价等非招标采购方式），升级必须二选一：在 reviewedAndAdopted 登记并经合规复核后全量采纳，或整体阻断。默认未登记即阻断——绝不静默放行一个未经审视的域元素。本产品姿态（用户 2026-11-11 拍板）：经合规复核后纳入支持（非永久屏蔽）；上游一旦新增 watchedTerms 域元素，须在 reviewedAndAdopted 登记合规复核结论（版本/法律地位/适用边界/救济渠道/我方守门补充）后采纳并补自有守门逻辑，而非永久拒绝。",
+    "default": "block-until-reviewed",
+    "blockedWhenUnlisted": true,
+    "watchedTerms": ["议标", "竞争性谈判", "单一来源采购", "询价"],
+    "reviewedAndAdopted": []
+  }
+}
