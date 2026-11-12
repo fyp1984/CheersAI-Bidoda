@@ -5,7 +5,7 @@
 # 渲染进程(UI)将无法启动。改名须与 plist 内的 CFBundleExecutable 保持一致。
 import os, plistlib
 
-APP = "/Users/FYP/Documents/WorkSpace/bidoda-shell/dist/bidoda.app"
+APP = "/Users/FYP/Documents/WorkSpace/CheersAI-Bidoda/dist/bidoda.app"
 OLD = "易标投标工具箱"
 NEW = "bidoda"
 
