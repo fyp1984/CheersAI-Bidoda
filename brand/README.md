@@ -14,7 +14,7 @@ bidoda 不完整改上游任何业务逻辑。上游 `OpenBidKit_Yibiao` 的源�
 本机已具备 Node.js v22.22.2 / npm 10.9.7 / pnpm 10.32.1，符合上游 README 要求的 Node.js 22。缺的是 .NET 10 SDK——**只有自行打包（dist:mac）才需要，直接跑官方产物不需要**。
 
 ```bash
-cd /Users/FYP/Documents/WorkSpace/bidoda-shell
+cd /Users/FYP/Documents/WorkSpace/CheersAI-Bidoda
 
 # 1) 取官方安装包（任选其一，放进 releases/）
 #    GitHub: https://github.com/FB208/OpenBidKit_Yibiao/releases/download/v2.31.7/Yibiao-2.31.7-mac-arm64.zip
