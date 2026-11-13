@@ -100,7 +100,7 @@ description: 把上游开源易标 OpenBidKit_Yibiao 客户化为本地工程 bi
 | C | D3 运营入口摘除 | C1–C13 | 无 `ResourcesPage` / `SidebarAdCard` / `DonationPromptProvider` / `LicenseStatusPrompt` / `wiki.agnet.top`；`UpdateNotifier` 不再被任何文件挂载（`src/App.tsx` 已摘除 import 与挂载） |
 | D | D4 网络与合规加固 | D1–D15 | 无 `analytics.agnet.top` / `wiki.agnet.top` / `v3.yibiao.pro` / `openbidkit-oss.agnet.top` |
 | E | 官方账户 / 充值 / 发票体系删除 | 15 个整文件删除 + 5 处就地改造 | 无 `OfficialAccountControls` / `OfficialRechargeDialog` |
-| F | 第三方提供商剔除（official / jinlong / agnes） | F1–F6 | 无 `jlaudeapi.com` / `agnes-ai.com` / `'official'` / `'jinlong'` / `'agnes'` |
+| F | 第三方提供商剔除（jinlong / agnes / 重复 deepseek）；official 通道保留并改指 DeepSeek | F1–F6 | 无 `jlaudeapi.com` / `agnes-ai.com` / `'jinlong'` / `'agnes'`；`official` 保留并以 `https://api.deepseek.com` 直连 |
 | G | docx 协议标签改名（双端同步） | 10 条映射 | `YIBIAOANCHOR\|YIBIAOTOC\|YBPAGE:\|yb_layout_\|_YbP` 命中 0，且 `BIDODA*` 齐全 |
 | H | openxmlhelper 命名空间改名 | H1–H3 | `Yibiao.OpenXmlHelper` 命中 0（含编译产物 UTF-16） |
 | I | 构建溯源 keyId | I1–I2 | keyId 与 productName 已客户化 |
