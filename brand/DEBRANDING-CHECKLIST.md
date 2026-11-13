@@ -10,6 +10,7 @@
 > | 单一事实源 | [`brand/brand.json`](./brand.json) |
 > | 重放引擎 | [`brand/apply.mjs`](./apply.mjs) |
 > | 验收脚本 | [`brand/verify.mjs`](./verify.mjs) |
+> | 客户化执行 Skill | [`.trae/skills/bidoda-upstream-customization/SKILL.md`](../.trae/skills/bidoda-upstream-customization/SKILL.md)（含 A–L 逐项底稿与「一条命令」全量验收） |
 > | 产物基线工具 | [`brand/asar-manifest.mjs`](./asar-manifest.mjs)（app.asar 逐文件 sha256 内存解析，零落盘） |
 > | 整体改动补丁 | [`brand/debrand-delta-v2.32.2.patch`](./debrand-delta-v2.32.2.patch) |
 > | 产物基线（Windows 路线） | `vendor/baselines/v2.32.2-win/app.asar.sha256.json`（26,976 个 asar 文件哈希） |
@@ -105,7 +106,7 @@
 | D12 | 打赏/议题远端停用 | `electron/services/donationService.cjs` | `ISSUE_WIKI_API_BASE=''` | 无 `wiki.agnet.top/api` |
 | D13 | 授权激活端点停用 + 弹窗关闭 | `electron/services/licenseService.cjs` | `LICENSE_ENDPOINT=''`；`debugLicenseDisabled=true` | 无 `license/activate`；`mustContain: debugLicenseDisabled = true;` |
 | D14 | 自动更新源全部停用 | `electron/services/updateService.cjs` | `GITHUB_RELEASE_API` / `CLOUDFLARE_RELEASE_BASE_URL` / `ATOMGIT_REPOSITORY_URL` / `ATOMGIT_RELEASE_API_BASE_URL` 全置 `''` | 无 `openbidkit-oss.agnet.top` |
-| D15 | 大模型设置中的官方 API 端点清除 | `src/features/settings/pages/SettingsPage.tsx` | `'https://v3.yibiao.pro/qhp-ai/anonymous/openai/v1'` → `''` | 无 `v3.yibiao.pro` |
+| D15 | 大模型设置中的官方 API 端点改指 DeepSeek 官方 API | `src/features/settings/pages/SettingsPage.tsx` | `textProviderDefaults.official` 整行：`base_url` `'https://v3.yibiao.pro/qhp-ai/anonymous/openai/v1'` → `'https://api.deepseek.com'`；`model_name` `'TEXT_GENERATION'` → `'deepseek-chat'`；`multimodal_enabled` `true` → `false`；上下限/并发改用 `DEFAULT_TEXT_*` | 无 `v3.yibiao.pro` |
 
 > **例外（保留）**：`electron/services/dependencyService.cjs` 的 `DEPENDENCY_API_URL`（`analytics.agnet.top/dependencies`）**按 2026-11-12 决策 #4 暂保留**——避免影响双层 PDF / OCR 运行时依赖下载。已登记在 `brand.json` → `debranding.assert.forbiddenDomainAllowFiles`。升级时若上游调整该文件，需重新评估。
 
@@ -137,20 +138,20 @@
 
 **验证**：`brand.json` → `assert` 的 `mustNotContainMarkers`（`OfficialAccountControls`、`OfficialRechargeDialog`）；`verify.mjs` 对每条 `delete-file` 规则断言文件已删除。
 
-### F. 第三方模型提供商剔除（official / jinlong / agnes）
+### F. 第三方模型提供商剔除（jinlong / agnes / 重复 deepseek）；official 通道保留并改指 DeepSeek
 
-**文件**：`client/electron/services/configStore.cjs`（规则 `del-providers-config-store`）
+**文件**：`client/electron/services/configStore.cjs`（规则 `del-providers-config-store`）；`client/src/features/settings/pages/SettingsPage.tsx`（规则 `net-settings-official-baseurl` + 第二轨）
 
 | # | 改动点 | 内容 |
 | --- | --- | --- |
-| F1 | 文本提供商白名单 | `['official','jinlong','volcengine','deepseek','agnes','custom']` → `['volcengine','deepseek','custom']` |
+| F1 | 文本提供商白名单 | `['official','jinlong','volcengine','deepseek','agnes','custom']` → `['official','volcengine','custom']`（`official` 保留为「官方API」独立条目，原 `deepseek` 条目并入其中） |
 | F2 | 图片提供商白名单 | `['jinlong','volcengine','google-ai-studio','agnes','custom','comfyui']` → `['volcengine','google-ai-studio','custom','comfyui']` |
-| F3 | 常量与默认值清理 | 删 `agnesImageRatios`、`official/jinlong/agnes` 的 baseURL 与 profile、`normalizeImageRatio()`、`official_api_model_type` 全链 |
-| F4 | 默认提供商 | 文本默认 `official` → `custom`；图片默认 `jinlong` → `volcengine`；`useProviderDefaultImageModel=false` |
+| F3 | 常量与默认值清理 | 删 `agnesImageRatios`、`jinlong`/`agnes`/重复 `deepseek` 的 baseURL 与 profile、`normalizeImageRatio()`、`official_api_model_type` 全链；`official` 的 baseURL 改 `https://api.deepseek.com`，profile 改 DeepSeek 形态（`model_name: 'deepseek-chat'`、`multimodal_enabled: false`、上下限/并发用 `DEFAULT_TEXT_*`） |
+| F4 | 默认提供商 | 文本默认保持 `official`；图片默认 `jinlong` → `volcengine`；`useProviderDefaultImageModel=false` |
 | F5 | `aiService.cjs` | 移除 jinlong（`jlaudeapi.com`）/agnes（`apihub.agnes-ai.com`）默认 baseUrl |
-| F6 | `SettingsPage.tsx` | 移除 jinlong/agnes 预设、API Key 引导链接 `platform.agnes-ai.com` 等 |
+| F6 | `SettingsPage.tsx` | 文本提供商列表合并为「官方API / 火山方舟 / 自定义」（`official` 标签由「易标官方API」改为「官方API」）；`textProviderDefaults.official` 改 DeepSeek 直连；移除 jinlong/agnes 预设与 API Key 引导链接 `platform.agnes-ai.com`、`s.markup.com.cn` 等 |
 
-**验证**：`mustNotContain: ["v3.yibiao.pro/qhp-ai", "jlaudeapi.com", "agnes-ai.com", "'official'", "'jinlong'", "'agnes'"]`。
+**验证**：`mustNotContain: ["v3.yibiao.pro/qhp-ai", "jlaudeapi.com", "agnes-ai.com", "'jinlong'", "'agnes'"]`（`'official'` 为保留项，不再断言）。
 > 🔎 **注意**：`YbTpl`、`YIBIAO_CONTENT_TABLE_` 为**未改名**的内部常量，属预期保留项，不在本清单改名范围。
 
 ### G. docx 私有协议标签改名（客户端 + openxmlhelper **双端必须同步**）
@@ -214,11 +215,14 @@
 ## 3. 全量验收命令
 
 ```powershell
+# 0) 一条命令跑完 [1]+[2]（+ 可选 [3] 产物基线）；退出码 0 = 可出包
+node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs --work work\win-build-2.32.2
+
 # 1) 清单驱动断言（域名红线 / 文本红线 / 保留项），落到工作副本实际内容
 node brand/verify.mjs --debrand-check work\win-build-2.32.2\client
 
-# 2) 旧标识残留总检（应仅剩 dependencyService.cjs 的允许例外）
-git -C work\win-build-2.32.2 grep -n -E "analytics\.agnet\.top|wiki\.agnet\.top|jlaudeapi|agnes-ai|v3\.yibiao\.pro"
+# 2) 旧标识残留总检（dependencyService.cjs 为 brand.json 已登记例外，故排除）
+git -C work\win-build-2.32.2 grep -n -E "analytics\.agnet\.top|wiki\.agnet\.top|jlaudeapi|agnes-ai|v3\.yibiao\.pro" -- ":(exclude)*dependencyService.cjs"
 
 # 3) docx 协议旧标签残留（应为 0）
 git -C work\win-build-2.32.2 grep -n -E "YIBIAOANCHOR|YIBIAOTOC|YBPAGE:|yb_layout_|_YbP"
@@ -226,8 +230,10 @@ git -C work\win-build-2.32.2 grep -n -E "YIBIAOANCHOR|YIBIAOTOC|YBPAGE:|yb_layou
 # 4) openxmlhelper 旧命名空间残留（应为 0）
 git -C work\win-build-2.32.2 grep -n "Yibiao.OpenXmlHelper"
 
-# 5) 应用内自动更新残留（应为 0）
-git -C work\win-build-2.32.2 grep -n -E "quitAndInstall|checkForUpdates|UpdateNotifier"
+# 5) 应用内自动更新组件未被挂载（应为 0）
+#    注：只断言「不再被挂载/引用」，不断言 quitAndInstall / checkForUpdates 符号本身——
+#    updateService.cjs 的四个更新源端点已按 D14 置空，残留 IPC 管线属最小化改动（端点停用而非改逻辑）。
+git -C work\win-build-2.32.2 grep -n -E "import[^;]*UpdateNotifier|<UpdateNotifier|UpdateNotifierProvider"
 
 # 6) 建产物基线（Windows 源码路线；打包产出 app.asar 后执行一次）
 node brand/apply.mjs --freeze-baseline --asar "work\win-build-2.32.2\client\release-win4\win-unpacked\resources\app.asar" --baseline-id v2.32.2-win

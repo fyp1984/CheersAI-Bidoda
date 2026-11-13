@@ -13034,7 +13034,7 @@ index 002f9f2..b589c91 100644
        }
  
 diff --git a/client/electron/services/configStore.cjs b/client/electron/services/configStore.cjs
-index 0eb8e9b..b89c919 100644
+index 0eb8e9b..2b4ed0b 100644
 --- a/client/electron/services/configStore.cjs
 +++ b/client/electron/services/configStore.cjs
 @@ -4,8 +4,8 @@ const { getConfigFilePath } = require('../utils/paths.cjs');
@@ -13043,12 +13043,12 @@ index 0eb8e9b..b89c919 100644
  
 -const textModelProviders = ['official', 'jinlong', 'volcengine', 'deepseek', 'agnes', 'custom'];
 -const imageModelProviders = ['jinlong', 'volcengine', 'google-ai-studio', 'agnes', 'custom', 'comfyui'];
-+const textModelProviders = ['volcengine', 'deepseek', 'custom'];
++const textModelProviders = ['official', 'volcengine', 'custom'];
 +const imageModelProviders = ['volcengine', 'google-ai-studio', 'custom', 'comfyui'];
  const aiRequestModes = ['normal', 'stream'];
  const updateChannels = ['github', 'cloudflare', 'atomgit'];
  const DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT = 400000;
-@@ -19,44 +19,14 @@ const MAX_COMPONENT_CONCURRENCY_LIMIT = 20;
+@@ -19,14 +19,10 @@ const MAX_COMPONENT_CONCURRENCY_LIMIT = 20;
  const DEFAULT_AGENT_AUTO_ANSWER_ENABLED = false;
  const openAICompatibleImageSizes = ['auto', '1K', '2K', '3K', '4K', '1024x768', '1024x1024', '768x1024', '1536x1024', '1024x1536', '2048x2048', '2048x1152', '3840x2160', '2160x3840'];
  const googleImageSizes = ['512', '1K', '2K', '4K'];
@@ -13057,16 +13057,17 @@ index 0eb8e9b..b89c919 100644
  const textProviderBaseUrls = {
 -  official: 'https://v3.yibiao.pro/qhp-ai/anonymous/openai/v1',
 -  jinlong: 'https://jlaudeapi.com/v1',
++  official: 'https://api.deepseek.com',
    volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
-   deepseek: 'https://api.deepseek.com',
+-  deepseek: 'https://api.deepseek.com',
 -  agnes: 'https://apihub.agnes-ai.com/v1',
    custom: '',
  };
  
- const defaultTextModelProfiles = {
--  official: {
--    api_key: '',
--    base_url: textProviderBaseUrls.official,
+@@ -34,20 +30,7 @@ const defaultTextModelProfiles = {
+   official: {
+     api_key: '',
+     base_url: textProviderBaseUrls.official,
 -    model_name: 'TEXT_GENERATION',
 -    multimodal_enabled: true,
 -    reasoning_effort: '',
@@ -13081,6 +13082,18 @@ index 0eb8e9b..b89c919 100644
 -    api_key: '',
 -    base_url: textProviderBaseUrls.jinlong,
 -    model_name: 'gpt-3.5-turbo',
++    model_name: 'deepseek-chat',
+     multimodal_enabled: false,
+     reasoning_effort: '',
+     context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT,
+@@ -70,32 +53,6 @@ const defaultTextModelProfiles = {
+     temperature: DEFAULT_TEXT_TEMPERATURE,
+     request_mode: 'stream',
+   },
+-  deepseek: {
+-    api_key: '',
+-    base_url: textProviderBaseUrls.deepseek,
+-    model_name: '',
 -    multimodal_enabled: false,
 -    reasoning_effort: '',
 -    context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT,
@@ -13090,13 +13103,6 @@ index 0eb8e9b..b89c919 100644
 -    temperature: DEFAULT_TEXT_TEMPERATURE,
 -    request_mode: 'stream',
 -  },
-   volcengine: {
-     api_key: '',
-     base_url: textProviderBaseUrls.volcengine,
-@@ -83,19 +53,6 @@ const defaultTextModelProfiles = {
-     temperature: DEFAULT_TEXT_TEMPERATURE,
-     request_mode: 'stream',
-   },
 -  agnes: {
 -    api_key: '',
 -    base_url: textProviderBaseUrls.agnes,
@@ -13158,16 +13164,13 @@ index 0eb8e9b..b89c919 100644
    custom: {
      provider: 'custom',
      base_url: '',
-@@ -190,12 +122,11 @@ const defaultImageModelProfiles = {
- };
+@@ -191,11 +123,10 @@ const defaultImageModelProfiles = {
  
  const defaultConfig = {
--  text_model_provider: 'official',
+   text_model_provider: 'official',
 -  official_api_model_type: 'cost-effective',
-+  text_model_provider: 'custom',
    text_model_profiles: defaultTextModelProfiles,
--  ...defaultTextModelProfiles.official,
-+  ...defaultTextModelProfiles.custom,
+   ...defaultTextModelProfiles.official,
    image_model: {
 -    ...defaultImageModelProfiles.jinlong,
 +    ...defaultImageModelProfiles.volcengine,
@@ -16344,7 +16347,7 @@ index c69fbec..0000000
 -  return account;
 -}
 diff --git a/client/src/features/settings/pages/SettingsPage.tsx b/client/src/features/settings/pages/SettingsPage.tsx
-index b25e02a..bb166a7 100644
+index b25e02a..e5fa69d 100644
 --- a/client/src/features/settings/pages/SettingsPage.tsx
 +++ b/client/src/features/settings/pages/SettingsPage.tsx
 @@ -1,20 +1,12 @@
@@ -16394,8 +16397,9 @@ index b25e02a..bb166a7 100644
  const textModelProviders: Array<{ value: TextModelProvider; label: string }> = [
 -  { value: 'official', label: '易标官方API' },
 -  { value: 'jinlong', label: '金龙中转站【推荐】' },
++  { value: 'official', label: '官方API' },
    { value: 'volcengine', label: '火山方舟' },
-   { value: 'deepseek', label: 'DeepSeek' },
+-  { value: 'deepseek', label: 'DeepSeek' },
 -  { value: 'agnes', label: 'Agnes AI' },
    { value: 'custom', label: '自定义' },
  ];
@@ -16416,8 +16420,9 @@ index b25e02a..bb166a7 100644
  const textProviderDefaults: Record<TextModelProvider, TextModelConfig> = {
 -  official: { api_key: '', base_url: 'https://v3.yibiao.pro/qhp-ai/anonymous/openai/v1', model_name: 'TEXT_GENERATION', multimodal_enabled: true, reasoning_effort: '', context_length_limit: 258000, output_token_limit: 128000, concurrency_limit: 50, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
 -  jinlong: { api_key: '', base_url: 'https://jlaudeapi.com/v1', model_name: 'gpt-3.5-turbo', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
++  official: { api_key: '', base_url: 'https://api.deepseek.com', model_name: 'deepseek-chat', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
    volcengine: { api_key: '', base_url: 'https://ark.cn-beijing.volces.com/api/v3', model_name: '', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
-   deepseek: { api_key: '', base_url: 'https://api.deepseek.com', model_name: '', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
+-  deepseek: { api_key: '', base_url: 'https://api.deepseek.com', model_name: '', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
 -  agnes: { api_key: '', base_url: 'https://apihub.agnes-ai.com/v1', model_name: '', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
    custom: { api_key: '', base_url: '', model_name: '', multimodal_enabled: false, reasoning_effort: '', context_length_limit: DEFAULT_TEXT_CONTEXT_LENGTH_LIMIT, output_token_limit: DEFAULT_TEXT_OUTPUT_TOKEN_LIMIT, concurrency_limit: DEFAULT_TEXT_CONCURRENCY_LIMIT, temperature_enabled: false, temperature: DEFAULT_TEXT_TEMPERATURE, request_mode: 'stream' },
  };
@@ -16436,8 +16441,9 @@ index b25e02a..bb166a7 100644
  
  const textProviderApiKeyUrls: Partial<Record<TextModelProvider, string>> = {
 -  jinlong: 'https://s.markup.com.cn/jl',
++  official: 'https://platform.deepseek.com/api_keys',
    volcengine: 'https://console.volcengine.com/ark/region:ark+cn-beijing/apiKey',
-   deepseek: 'https://platform.deepseek.com/api_keys',
+-  deepseek: 'https://platform.deepseek.com/api_keys',
 -  agnes: 'https://platform.agnes-ai.com/settings/apiKeys',
  };
  
@@ -16630,14 +16636,8 @@ index b25e02a..bb166a7 100644
      ...(imageModel.provider === 'volcengine' ? { image_watermark: imageModel.image_watermark !== false } : {}),
      request_mode: imageModel.request_mode,
      concurrency_limit: normalizeImageConcurrencyLimit(imageModel.concurrency_limit),
-@@ -618,13 +509,12 @@ const parserOptions = [
- 
- const initialState: SettingsPageState = {
-   textModel: {
--    provider: 'official',
--    ...textProviderDefaults.official,
-+    provider: 'custom',
-+    ...textProviderDefaults.custom,
+@@ -622,9 +513,8 @@ const initialState: SettingsPageState = {
+     ...textProviderDefaults.official,
    },
    textModelProfiles: createDefaultTextModelProfiles(),
 -  officialApiModelType: 'cost-effective',
@@ -17307,12 +17307,12 @@ index a163b16..0af4964 100644
  const PROJECT_NAME = NOTICE_PROJECT_NAME;
  const DISMISSED_NOTICE_ID_KEY = 'remote_notice_dismissed_id';
 diff --git a/client/src/shared/types/config.ts b/client/src/shared/types/config.ts
-index 15b9c28..f25ce7b 100644
+index 15b9c28..55cfd90 100644
 --- a/client/src/shared/types/config.ts
 +++ b/client/src/shared/types/config.ts
 @@ -1,4 +1,4 @@
 -export type TextModelProvider = 'official' | 'jinlong' | 'volcengine' | 'deepseek' | 'agnes' | 'custom';
-+export type TextModelProvider = 'volcengine' | 'deepseek' | 'custom';
++export type TextModelProvider = 'official' | 'volcengine' | 'custom';
  export type AiRequestMode = 'normal' | 'stream';
  export type UpdateChannel = 'github' | 'cloudflare' | 'atomgit';
  
