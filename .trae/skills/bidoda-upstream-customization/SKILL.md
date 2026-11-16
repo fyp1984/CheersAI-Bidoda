@@ -85,7 +85,7 @@ description: 把上游开源易标 OpenBidKit_Yibiao 客户化为本地工程 bi
 
 1. **单一真相源**：`brand.json → versionLock.pinnedVersion` 锁死；运行实例靠 `BIDODA-PIN.json` 自报上游版本。
 2. **零补丁残留**：任何业务修正只能源于「重放到新版上游」，绝不在产物里手改逻辑。
-3. **基线比对**：macOS 产物路线对**官方原版** `app.asar` 建「上游原版基线」；Windows 源码路线对**本工程打包产物**建「产物基线」（`--asar`，`baselineId` 形如 `<版本>-win`）。**自有面**（非 `node_modules/**`）漂移 = 阻断级；`node_modules` 漂移按 lockfile 钉版单列为信息性 WARN。
+3. **基线比对**：macOS 产物路线对**官方原版** `app.asar` 建「上游原版基线」；源码构建路线对**本工程打包产物** `app.asar` 建「产物基线」（`--asar`，Windows / macOS 通用，`baselineId` 形如 `<版本>-win` / `<版本>-mac-arm64`）。**自有面**（非 `node_modules/**`）漂移 = 阻断级；`node_modules` 漂移按 lockfile 钉版单列为信息性 WARN。
 
 另有**域同步闸门**：上游新增「议标 / 竞争性谈判 / 单一来源采购 / 询价」等采购方式类域元素，未在 `brand.json → domainSyncPolicy.reviewedAndAdopted` 登记并经复核，升级**默认阻断**。
 
@@ -118,13 +118,57 @@ description: 把上游开源易标 OpenBidKit_Yibiao 客户化为本地工程 bi
 4. **重放第二轨**：`git apply brand/debrand-delta-<版本>.patch`；上游改动导致冲突时逐项手工对齐，并**更新补丁与版本号**。
 5. **逐条核对** `references/debranding-checklist.md`（A–L）。任何一条不通过即视为被覆盖 / 回退，修复后才继续。
 6. **跑全量验收**（第 7 节）：`node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs --work work/<版本>`。
-7. **打包**：前端构建 → 生成诊断源码包 → 去标识化验收 → 生成构建证明 → electron-builder 出 exe/zip。
-8. **建产物基线并入库**：`--freeze-baseline --asar <产物>/win-unpacked/resources/app.asar --baseline-id <版本>-win`，基线提交进 `vendor/baselines/`。
+7. **打包**：前端构建 → 生成诊断源码包 → 去标识化验收 → 生成构建证明 → electron-builder 出 exe/zip（macOS 本机源码打包见 6.1）。
+8. **建产物基线并入库**：`--freeze-baseline --asar <产物>/win-unpacked/resources/app.asar --baseline-id <版本>-win`（macOS 为 `<产物>/bidoda.app/Contents/Resources/app.asar`，`--baseline-id <版本>-mac-arm64`），基线提交进 `vendor/baselines/`。
 9. **产出物验收**（第 7 节末）。
 10. **全绿才切换版本指针**；任一失败保留旧版回滚，**绝不出包**。
 11. **同步三处**：`brand/DEBRANDING-CHECKLIST.md`、本 Skill 的 `references/debranding-checklist.md`、`brand.json → debranding.assert`。
 
 > **禁止**在应用内点「检查更新」——其 `publish` 指向上游官方 Release，会把品牌换回官方版。
+
+### 6.1 本机 macOS（Apple Silicon）源码打包出 DMG
+
+前置：Node 22+；`.NET 10 SDK` 装到**用户目录**（不污染系统，`openxmlhelper` 编译依赖它）：
+
+```bash
+curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 10.0 --install-dir "$HOME/.dotnet"
+export PATH="$HOME/.dotnet:$PATH"
+dotnet --version        # 期望 10.0.x（本工程实测 10.0.404）
+```
+
+依赖走国内镜像安装（GitHub 直连拉 electron 二进制会中断 `postinstall`）：
+
+```bash
+cd work/<版本>/client
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+npm ci
+```
+
+构建 + 出 `.app` / `.zip`（`dist:mac` 会按 `darwin --arch all` 同时准备 x64 与 arm64 助手）：
+
+```bash
+npm run build                                     # tsc --noEmit && vite build
+node scripts/prepare-openxml-helper.cjs --platform darwin --arch arm64   # 或 --arch all
+node scripts/prepare-diagnosis-source.cjs         # 生成 vendor/diagnosis-source/source.zip
+npx electron-builder --mac --publish never        # 产物在 release/mac{,-arm64}/bidoda.app
+```
+
+- **不要走 `dmg` 目标**：electron-builder 内置 DMG 打包器 `dmg-builder` 需从 GitHub 拉二进制，直连会卡死。改用系统 `hdiutil` 手工出 DMG（`.zip` 目标可正常出）。
+- 若 `release/mac*/bidoda.app` 的 `Info.plist` 只有 `CFBundleName=bidoda`，需补齐 `CFBundleDisplayName=投标智囊团`，并复制 `ACKNOWLEDGEMENTS.md` / `LICENSE` / `NOTICE` / 写入 `BIDODA-PIN.json`，最后 `codesign --force --deep --sign - <app>` 重新 ad-hoc 签名。
+
+```bash
+STAGE=$(mktemp -d)
+cp -R client/release/mac-arm64/bidoda.app "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+cp client/assets/macos-dmg/macOS使用说明.txt "$STAGE/"
+hdiutil create -volname "投标智囊团" -srcfolder "$STAGE" -ov -format UDZO -fs HFS+ \
+  releases/bidoda-0.1.0-mac-arm64.dmg
+hdiutil verify releases/bidoda-0.1.0-mac-arm64.dmg
+```
+
+- `.dmg` 入 `releases/`（该目录不入库，仅本地分发）；产物基线按第 8 步用 `--baseline-id <版本>-mac-arm64` 建立并入库。
+- 首次启动：因 ad-hoc 签名 + 网络下载，macOS 会拦截，需「访达 → 右键 → 打开」允许一次。
 
 ## 7. 全量验收
 
@@ -137,6 +181,14 @@ node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs --work wo
 # 出包后（先建基线再比对）
 node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs --work work/win-build-<版本> `
   --asar "<产物>/win-unpacked/resources/app.asar" --baseline-id <版本>-win --freeze
+```
+
+```bash
+# macOS arm64（zsh/baseline：出包后建基线 + 比对一条命令）
+node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs \
+  --work work/<版本> \
+  --asar work/<版本>/client/release/mac-arm64/bidoda.app/Contents/Resources/app.asar \
+  --baseline-id <版本>-mac-arm64 --freeze
 ```
 
 退出码 0 = 全绿可出包；非 0 = 有闸门未通过，**禁止出包**。脚本内的闸门清单见 `scripts/acceptance.mjs` 顶部注释；需要单步排查时，直接调 `brand/apply.mjs` / `brand/verify.mjs` 的对应开关。
@@ -169,6 +221,10 @@ node .trae/skills/bidoda-upstream-customization/scripts/acceptance.mjs --work wo
 - 直连 GitHub 可能超时，必要时用镜像（如 `https://gh-proxy.com/`）。
 - 产物含 2.6 万+ 文件，asar 必须**内存解析**；逐文件落盘会被拖慢甚至杀掉。
 - `.gitignore` 必须写 `vendor/*` + `!vendor/baselines/`：整目录 `vendor/` 排除时无法在其下开白名单，基线会静默不入库。
+- **macOS 本机源码打包**：`.NET 10 SDK` 装到 `~/.dotnet`（`openxmlhelper` 编译依赖）；`npm ci` 前务必导出 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 指向 npmmirror，否则 `postinstall` 拉 electron 二进制会中断。
+- **electron-builder 的 `dmg` 目标不可用**：内置 `dmg-builder` 需从 GitHub 拉二进制，直连会卡死；只出 `.zip`/`dir`，DMG 用 `hdiutil` 手工制作（见 6.1）。
+- **`client/assets/icon.icns` 可能缺失**（上游源码仓未纳入），mac 构建前需从 `brand/assets/icon.icns` 补入，否则产物无图标。
+- 改动 `.app` 内任意文件（含 `Info.plist`、补入 `Resources/`）后必须重跑 `codesign --force --deep --sign -`，否则 macOS 因签名破坏拒绝启动。
 
 ## 10. 维护规则
 
