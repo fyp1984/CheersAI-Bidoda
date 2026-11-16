@@ -52,9 +52,9 @@ if (OPT.help) {
   --dry-run           只打印变更清单，不写 dist/、不签名
   --freeze-baseline  建立产物基线（vendor/baselines/<baseline-id>/app.asar.sha256.json），供 verify 防杂交/防回退比对
                      macOS 产物路线：对官方原版 zip/.app 的 app.asar 建立上游基线
-                     Windows 源码路线：配 --asar 直接对打包产物 app.asar 建立基线
-  --asar <path>       仅用于 --freeze-baseline：直接指定产物 app.asar（Windows 路线，内存解析零落盘）
-  --baseline-id <id>  仅用于 --freeze-baseline：基线目录名，默认取 versionLock.pinnedVersion（Windows 建议 <ver>-win）
+                     源码构建路线：配 --asar 直接对打包产物 app.asar 建立基线（Windows / macOS 通用）
+  --asar <path>       仅用于 --freeze-baseline：直接指定产物 app.asar（源码构建路线，内存解析零落盘）
+  --baseline-id <id>  仅用于 --freeze-baseline：基线目录名，默认取 versionLock.pinnedVersion（建议 <ver>-win / <ver>-mac-arm64）
 升级流程：下载上游新 zip -> 重跑本脚本 -> node brand/verify.mjs 全绿 -> 切换版本指针
 防杂交：先用 --freeze-baseline 建立原版基线，再 freeze 之后每次升级都比对「上游基线 + 换皮清单」，任何预期外差异即阻断`);
   process.exit(0);
@@ -197,7 +197,7 @@ async function freezeBaseline() {
     if (!fs.existsSync(asarPath)) fail('--asar 路径不存在：' + asarPath);
     log('读取产物 app.asar：' + path.relative(ROOT, asarPath));
     ({ manifest, fileCount } = await asarManifest(asarPath));
-    kind = 'win-product-asar';
+    kind = /\.app[\\/]Contents[\\/]Resources[\\/]app\.asar$/.test(asarPath) ? 'mac-product-asar' : 'win-product-asar';
   } else {
     let appSrc;
     if (OPT.app) {
